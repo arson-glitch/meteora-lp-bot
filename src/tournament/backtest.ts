@@ -27,7 +27,7 @@ export interface TrialResult {
   poolName: string;
   strategyId: string;
   coinType: CoinType;
-  split: "train" | "test";
+  split: "train" | "test" | "holdout";
   candles: number;
   depositedUsd: number;
   equityUsd: number;
@@ -61,7 +61,7 @@ export function replayStrategy(params: {
   sizeUsd: number;
   candleHours: number;
   coinType: CoinType;
-  split: "train" | "test";
+  split: "train" | "test" | "holdout";
 }): TrialResult | null {
   const { candles } = params;
   if (candles.length < 2) return null;

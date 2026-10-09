@@ -9,7 +9,9 @@ import { layoutForStrategy } from "../src/strategy/sides.js";
 import { replayStrategy, splitCandles } from "../src/tournament/backtest.js";
 import type { Candle } from "../src/tournament/candles.js";
 import { classifyPool } from "../src/tournament/classify.js";
-import { assignBuckets } from "../src/tournament/discover.js";
+import { assignBuckets, selectTournamentBuckets } from "../src/tournament/discover.js";
+import { holdoutCount, splitCoinKeys } from "../src/tournament/holdout.js";
+import { appendForwardPools, emptyForwardBook } from "../src/tournament/forward.js";
 import { openForwardBook } from "../src/tournament/forward.js";
 import { gridCells, gridStrategies, strategyFromCell } from "../src/tournament/grid.js";
 import { scoreTrials } from "../src/tournament/score.js";
@@ -268,22 +270,33 @@ describe("backtest replay", () => {
   });
 });
 
+describe("coin holdout", () => {
+  it("holds out about 30% of coins and keeps the sets disjoint", () => {
+    const keys = Array.from({ length: 18 }, (_, index) => `coin-${String(index).padStart(2, "0")}`);
+    expect(holdoutCount(18)).toBe(5);
+    const split = splitCoinKeys(keys);
+    expect(split.holdoutKeys).toHaveLength(5);
+    expect(split.trainKeys).toHaveLength(13);
+    expect(split.trainKeys.some((key) => split.holdoutKeys.includes(key))).toBe(false);
+    expect(splitCoinKeys(keys).holdoutKeys).toEqual(split.holdoutKeys);
+  });
+});
+
 describe("tournament scoring", () => {
-  it("confirms on the test window and ignores a high test score outside the top five", () => {
+  it("confirms on the time split and the coin holdout, and ignores a high test score outside the top five", () => {
     const trials: TrialResult[] = [];
     const specs = [
-      ["s0", 0.1, -0.02],
-      ["s1", 0.09, 0.04],
-      ["s2", 0.08, 0.01],
-      ["s3", 0.07, 0.01],
-      ["s4", 0.06, 0.01],
-      ["s5", 0.05, 0.9],
+      ["s0", 0.1, -0.02, 0.2],
+      ["s1", 0.09, 0.04, 0.03],
+      ["s2", 0.08, 0.01, 0.02],
+      ["s3", 0.07, 0.01, 0.02],
+      ["s4", 0.06, 0.01, 0.02],
+      ["s5", 0.05, 0.9, 0.5],
     ] as const;
-    for (const [id, trainReturn, testReturn] of specs) {
-      for (let i = 0; i < 3; i += 1) {
-        trials.push(fakeTrial(id, "train", trainReturn));
-        trials.push(fakeTrial(id, "test", testReturn));
-      }
+    for (const [id, trainReturn, testReturn, holdoutReturn] of specs) {
+      for (let i = 0; i < 8; i += 1) trials.push(fakeTrial(id, "train", trainReturn, i));
+      for (let i = 0; i < 5; i += 1) trials.push(fakeTrial(id, "test", testReturn, i));
+      for (let i = 0; i < 4; i += 1) trials.push(fakeTrial(id, "holdout", holdoutReturn, i));
     }
     const board = scoreTrials(trials, gridCells()).find((item) => item.coinType === "stable");
     expect(board?.winner?.strategyId).toBe("s1");
@@ -291,36 +304,86 @@ describe("tournament scoring", () => {
     expect(board?.rows.find((row) => row.strategyId === "s0")?.promoted).toBe(false);
   });
 
-  it("does not promote a thin sample or a non-positive test median", () => {
+  it("does not promote a thin sample, a losing time split, or a losing holdout", () => {
     const thin = scoreTrials(
-      [
-        fakeTrial("only", "train", 0.2),
-        fakeTrial("only", "train", 0.3),
-        fakeTrial("only", "test", 0.4),
-        fakeTrial("only", "test", 0.4),
-        fakeTrial("only", "test", 0.4),
-      ],
+      [fakeTrial("only", "train", 0.2, 0), fakeTrial("only", "train", 0.3, 1)],
       [],
     ).find((board) => board.coinType === "stable");
     expect(thin?.winner).toBeNull();
     expect(thin?.rows.find((row) => row.strategyId === "only")?.eligible).toBe(false);
 
-    const negative = scoreTrials(
-      [0, 1, 2].flatMap(() => [fakeTrial("neg", "train", 0.05), fakeTrial("neg", "test", -0.01)]),
-      [],
-    ).find((board) => board.coinType === "stable");
-    expect(negative?.winner).toBeNull();
-    expect(negative?.rows.find((row) => row.strategyId === "neg")?.inConfirmationSet).toBe(true);
+    const negative = many("neg", 0.05, -0.01, 0.04);
+    const negativeBoard = scoreTrials(negative, []).find((board) => board.coinType === "stable");
+    expect(negativeBoard?.winner).toBeNull();
+    expect(negativeBoard?.rows.find((row) => row.strategyId === "neg")?.inConfirmationSet).toBe(true);
 
-    const skewed = scoreTrials(
-      [0, 1, 2].flatMap((index) => [
-        fakeTrial("skew", "train", 0.05),
-        fakeTrial("skew", "test", index === 2 ? -0.5 : 0.2),
-      ]),
-      [],
-    ).find((board) => board.coinType === "stable");
-    expect(skewed?.rows.find((row) => row.strategyId === "skew")?.test.medianReturn ?? 0).toBeGreaterThan(0);
-    expect(skewed?.winner).toBeNull();
+    const skewed = [
+      ...repeat("skew", "train", 0.05, 8),
+      ...[0.2, 0.2, 0.2, 0.2, -0.9].map((value, index) => fakeTrial("skew", "test", value, index)),
+      ...repeat("skew", "holdout", 0.04, 4),
+    ];
+    const skewedBoard = scoreTrials(skewed, []).find((board) => board.coinType === "stable");
+    expect(skewedBoard?.rows.find((row) => row.strategyId === "skew")?.test.medianReturn ?? 0).toBeGreaterThan(0);
+    expect(skewedBoard?.winner).toBeNull();
+
+    const missedHoldout = many("miss", 0.05, 0.04, -0.02);
+    expect(scoreTrials(missedHoldout, []).find((board) => board.coinType === "stable")?.winner).toBeNull();
+  });
+});
+
+describe("extra pools and forward append", () => {
+  it("adds a second bin step for the same coin", () => {
+    const tight = solPool(24 * 30);
+    tight.address = "sol-tight";
+    tight.binStep = 4;
+    tight.volume = { "24h": 80_000 };
+    const wide = solPool(24 * 30);
+    wide.address = "sol-wide";
+    wide.binStep = 20;
+    wide.volume = { "24h": 10_000 };
+    const selected = selectTournamentBuckets([tight, wide], now, 18).find((bucket) => bucket.type === "bluechip");
+    expect(selected?.pools.map((pool) => pool.address).sort()).toEqual(["sol-tight", "sol-wide"]);
+  });
+
+  it("does not open a second grid on a coin already in the forward book", () => {
+    const book = emptyForwardBook(now, 250);
+    const first = appendForwardPools({
+      book,
+      buckets: [{ type: "bluechip", pools: [solPool(100)] }],
+      strategies: gridStrategies().slice(0, 2),
+      sizeUsd: 250,
+      nowMs: now,
+    });
+    expect(first.added).toHaveLength(1);
+    const again = appendForwardPools({
+      book: first.book,
+      buckets: [{ type: "bluechip", pools: [solPool(100)] }],
+      strategies: gridStrategies().slice(0, 2),
+      sizeUsd: 250,
+      nowMs: now,
+    });
+    expect(again.added).toHaveLength(0);
+    expect(again.book.positions).toHaveLength(2);
+  });
+
+  it("does not reopen a coin when the book row has no sample key", () => {
+    const book = emptyForwardBook(now, 250);
+    const primary = solPool(100);
+    primary.address = "sol-old";
+    const sibling = solPool(100);
+    sibling.address = "sol-new";
+    sibling.binStep = 80;
+    book.pools.push({ coinType: "bluechip", address: "sol-old", name: "SOL-USDC" });
+    const result = appendForwardPools({
+      book,
+      buckets: [{ type: "bluechip", pools: [sibling] }],
+      knownPools: [primary, sibling],
+      strategies: gridStrategies().slice(0, 2),
+      sizeUsd: 250,
+      nowMs: now,
+    });
+    expect(result.added).toHaveLength(0);
+    expect(book.pools[0]?.sampleKey).toBeTruthy();
   });
 });
 
@@ -435,10 +498,22 @@ function bar(index: number, open: number, high: number, low: number, close: numb
   };
 }
 
-function fakeTrial(strategyId: string, split: "train" | "test", returnPct: number): TrialResult {
+function repeat(strategyId: string, split: TrialResult["split"], returnPct: number, count: number): TrialResult[] {
+  return Array.from({ length: count }, (_, index) => fakeTrial(strategyId, split, returnPct, index));
+}
+
+function many(strategyId: string, trainReturn: number, testReturn: number, holdoutReturn: number): TrialResult[] {
+  return [
+    ...repeat(strategyId, "train", trainReturn, 8),
+    ...repeat(strategyId, "test", testReturn, 5),
+    ...repeat(strategyId, "holdout", holdoutReturn, 4),
+  ];
+}
+
+function fakeTrial(strategyId: string, split: TrialResult["split"], returnPct: number, index = 0): TrialResult {
   const coinType: CoinType = "stable";
   return {
-    poolAddress: `${strategyId}-${split}-${returnPct}`,
+    poolAddress: `${strategyId}-${split}-${returnPct}-${index}`,
     poolName: "fixture",
     strategyId,
     coinType,

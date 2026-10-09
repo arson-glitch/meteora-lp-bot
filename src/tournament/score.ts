@@ -4,16 +4,16 @@ import { COIN_TYPES } from "./classify.js";
 import type { TrialResult } from "./backtest.js";
 
 /**
- * Rank on the train window by median net return. The test window only
- * re-ranks the top five train strategies. A winner is written only when that
- * confirmation sample has at least three trials and both the median and the
- * mean net return are positive. A median that is a hair above zero while the
- * average trial lost money is not promoted. Test scores are not used to
- * search the other 103 cells.
+ * Rank on the train window by median net return. The time-split test only
+ * re-ranks the top five. The single best of those is promoted only when its
+ * time-split mean and median are positive and the cross-coin holdout also
+ * has enough trials with a positive mean and median. Holdout coins are never
+ * used to rank or to pick among the top five.
  */
 
-export const MIN_TRAIN_TRIALS = 3;
-export const MIN_TEST_TRIALS = 3;
+export const MIN_TRAIN_TRIALS = 8;
+export const MIN_TEST_TRIALS = 5;
+export const MIN_HOLDOUT_TRIALS = 4;
 export const CONFIRM_TOP_K = 5;
 
 export interface SplitStats {
@@ -36,6 +36,7 @@ export interface RankedStrategy {
   cell: GridCell | null;
   train: SplitStats;
   test: SplitStats;
+  holdout: SplitStats;
   trainRank: number | null;
   eligible: boolean;
   inConfirmationSet: boolean;
@@ -64,12 +65,14 @@ function scoreBucket(
     const mine = trials.filter((trial) => trial.strategyId === strategyId);
     const train = summarize(mine.filter((trial) => trial.split === "train"));
     const test = summarize(mine.filter((trial) => trial.split === "test"));
+    const holdout = summarize(mine.filter((trial) => trial.split === "holdout"));
     return {
       coinType,
       strategyId,
       cell: cellById.get(strategyId) ?? null,
       train,
       test,
+      holdout,
       trainRank: null,
       eligible: train.n >= MIN_TRAIN_TRIALS && train.medianReturn !== null,
       inConfirmationSet: false,
@@ -94,13 +97,19 @@ function scoreBucket(
     promotionNote =
       eligible.length === 0
         ? `No strategy has ${MIN_TRAIN_TRIALS} or more train trials, so nothing is promoted.`
-        : `The top train strategies do not have ${MIN_TEST_TRIALS} test trials, so nothing is promoted.`;
+        : `The top train strategies do not have ${MIN_TEST_TRIALS} time-split test trials, so nothing is promoted.`;
   } else if ((best.test.medianReturn ?? 0) <= 0 || (best.test.meanReturn ?? 0) <= 0) {
-    promotionNote = `${best.strategyId} led the test window among the top ${CONFIRM_TOP_K} train strategies, but the test median (${fmtPct(best.test.medianReturn)}) and mean (${fmtPct(best.test.meanReturn)}) are not both positive, so it is not promoted.`;
+    promotionNote = `${best.strategyId} led the time-split test among the top ${CONFIRM_TOP_K} train strategies, but the test median (${fmtPct(best.test.medianReturn)}) and mean (${fmtPct(best.test.meanReturn)}) are not both positive, so it is not promoted.`;
+  } else if (
+    best.holdout.n < MIN_HOLDOUT_TRIALS ||
+    (best.holdout.medianReturn ?? 0) <= 0 ||
+    (best.holdout.meanReturn ?? 0) <= 0
+  ) {
+    promotionNote = `${best.strategyId} passed the time split (median ${fmtPct(best.test.medianReturn)}, mean ${fmtPct(best.test.meanReturn)}) but the cross-coin holdout did not clear n≥${MIN_HOLDOUT_TRIALS} with a positive median (${fmtPct(best.holdout.medianReturn)}) and mean (${fmtPct(best.holdout.meanReturn)}), so it is not promoted.`;
   } else {
     best.promoted = true;
     winner = best;
-    promotionNote = `${best.strategyId} is promoted: train rank ${best.trainRank}, test n=${best.test.n}, test median return ${fmtPct(best.test.medianReturn)}.`;
+    promotionNote = `${best.strategyId} is promoted: train rank ${best.trainRank}, time-split n=${best.test.n} median ${fmtPct(best.test.medianReturn)}, holdout n=${best.holdout.n} median ${fmtPct(best.holdout.medianReturn)}.`;
   }
 
   rows.sort(compareTrain);

@@ -5,9 +5,11 @@ import { fetchDlmmPools } from "../scanner/meteora.js";
 import type { CoinType, DiscoveredPool } from "../types.js";
 import { COIN_TYPES, classifyPool, sampleKey } from "./classify.js";
 
-export const MAX_POOLS_PER_BUCKET = 4;
-export const CANDIDATES_PER_BUCKET = 8;
-const MIN_TVL_USD = 3_000;
+/** Coins replayed per bucket. Extra pools of the same coin are added when a second bin step exists. */
+export const TARGET_COINS_PER_BUCKET = 18;
+export const CANDIDATE_COINS_PER_BUCKET = 24;
+export const MAX_POOLS_PER_BUCKET = 40;
+const MIN_TVL_USD = 1_500;
 
 export interface BucketAssignment {
   type: CoinType;
@@ -21,68 +23,91 @@ export interface BucketAssignment {
  * rule can see a 24h move when the pool payload does not carry one.
  */
 export async function discoverTournamentPools(nowMs: number): Promise<DiscoveredPool[]> {
-  const jobs: Array<Promise<DiscoveredPool[]>> = [
-    fetchDlmmPools({
-      pageSize: 50,
-      sortBy: "volume_24h:desc",
-      filterBy: "is_blacklisted=false && tvl>=3000 && volume_24h>=1000",
-      listSource: "volume",
-    }),
-    fetchDlmmPools({
-      pageSize: 40,
-      sortBy: "pool_created_at:desc",
-      filterBy: "is_blacklisted=false && tvl>=1500",
-      listSource: "new",
-    }),
-    fetchDlmmPools({
-      pageSize: 15,
-      sortBy: "volume_24h:desc",
-      query: "USDC-USDT",
-      listSource: "volume",
-    }),
-    fetchDlmmPools({
-      pageSize: 15,
-      sortBy: "volume_24h:desc",
-      query: "USDT",
-      listSource: "volume",
-    }),
-    fetchDlmmPools({
-      pageSize: 10,
-      sortBy: "volume_24h:desc",
-      query: "SOL-USDC",
-      listSource: "volume",
-    }),
-    fetchDlmmPools({
-      pageSize: 8,
-      sortBy: "volume_24h:desc",
-      query: "PYUSD",
-      listSource: "volume",
-    }),
-    fetchDlmmPools({
-      pageSize: 8,
-      sortBy: "volume_24h:desc",
-      query: "EURC",
-      listSource: "volume",
-    }),
-    fetchDlmmPools({
-      pageSize: 8,
-      sortBy: "volume_24h:desc",
-      query: "USD1",
-      listSource: "volume",
-    }),
-  ];
-  const settled = await Promise.allSettled(jobs);
   const rows: DiscoveredPool[] = [];
-  for (const result of settled) {
+  const volumePages = await Promise.allSettled(
+    [1, 2, 3, 4, 5, 6, 7, 8].map((page) =>
+      fetchDlmmPools({
+        page,
+        pageSize: 100,
+        sortBy: "volume_24h:desc",
+        filterBy: "is_blacklisted=false && tvl>=1500 && volume_24h>=500",
+        listSource: "volume",
+      }),
+    ),
+  );
+  const newPages = await Promise.allSettled(
+    [1, 2, 3, 4].map((page) =>
+      fetchDlmmPools({
+        page,
+        pageSize: 100,
+        sortBy: "pool_created_at:desc",
+        filterBy: "is_blacklisted=false && tvl>=1500",
+        listSource: "new",
+      }),
+    ),
+  );
+  const queries = await Promise.allSettled(
+    ["USDC-USDT", "USDT", "SOL-USDC", "PYUSD", "EURC", "USD1", "USDS", "JUP", "cbBTC", "mSOL", "JitoSOL", "WBTC", "WETH", "BONK", "WIF", "JTO", "PYTH", "RAY"].map(
+      (query) =>
+        fetchDlmmPools({
+          pageSize: 20,
+          sortBy: "volume_24h:desc",
+          query,
+          listSource: "volume",
+        }),
+    ),
+  );
+  for (const result of [...volumePages, ...newPages, ...queries]) {
     if (result.status === "fulfilled") rows.push(...result.value);
   }
-  const universe = dedupe(rows).filter(tradable);
+  const universe = dedupe(rows).filter((pool) => tradable(pool));
   if (universe.length === 0) {
     throw new Error("Meteora returned no DLMM pools for the tournament. Check network access to dlmm.datapi.meteora.ag.");
   }
-  const shortlist = assignBuckets(universe, nowMs, CANDIDATES_PER_BUCKET).flatMap((bucket) => bucket.pools);
-  await enrichPriceChange(shortlist);
+  void nowMs;
   return universe;
+}
+
+/**
+ * One primary pool per coin, then extra pools with a different bin step.
+ * Buckets that already have 15 coins keep a single extra pool. Smaller
+ * buckets keep up to two extra pools so the trial count is not stuck on a
+ * handful of coins.
+ */
+export function selectTournamentBuckets(
+  pools: DiscoveredPool[],
+  nowMs: number,
+  coinsPerBucket: number,
+): BucketAssignment[] {
+  const primary = assignBuckets(pools, nowMs, coinsPerBucket);
+  return primary.map((bucket) => {
+    const extraSlots = extraPoolsPerCoin(bucket.pools.length);
+    if (extraSlots === 0) return bucket;
+    const wanted = new Map(bucket.pools.map((pool) => [sampleKey(pool), pool.binStep]));
+    const have = new Set(bucket.pools.map((pool) => pool.address));
+    const added: DiscoveredPool[] = [];
+    const addedPerKey = new Map<string, number>();
+    const rest = [...pools].sort((a, b) => (b.volume["24h"] ?? 0) - (a.volume["24h"] ?? 0));
+    for (const pool of rest) {
+      if (added.length + bucket.pools.length >= MAX_POOLS_PER_BUCKET) break;
+      const key = sampleKey(pool);
+      const primaryStep = wanted.get(key);
+      if (primaryStep === undefined || have.has(pool.address)) continue;
+      if (pool.binStep === primaryStep) continue;
+      const used = addedPerKey.get(key) ?? 0;
+      if (used >= extraSlots) continue;
+      have.add(pool.address);
+      addedPerKey.set(key, used + 1);
+      added.push(pool);
+    }
+    return { type: bucket.type, pools: [...bucket.pools, ...added] };
+  });
+}
+
+export function extraPoolsPerCoin(coinCount: number): number {
+  if (coinCount >= 15) return 1;
+  if (coinCount >= 1) return 2;
+  return 0;
 }
 
 export function assignBuckets(pools: DiscoveredPool[], nowMs: number, perBucket: number): BucketAssignment[] {
@@ -114,7 +139,7 @@ function dedupe(pools: DiscoveredPool[]): DiscoveredPool[] {
   return [...byAddress.values()];
 }
 
-async function enrichPriceChange(pools: DiscoveredPool[]): Promise<void> {
+export async function enrichPriceChange(pools: DiscoveredPool[]): Promise<void> {
   const cache = new Map<string, DiscoveredPool["market"]>();
   for (const pool of pools) {
     if (pool.market.priceChangeH24Pct !== null) continue;

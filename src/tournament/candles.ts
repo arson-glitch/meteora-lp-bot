@@ -28,45 +28,85 @@ export interface Candle {
   lpFeesUsd: number;
 }
 
+export type CandleTimeframe = "1h" | "4h" | "12h" | "24h";
+
 export interface CandleSeries {
   poolAddress: string;
-  timeframe: "1h" | "4h";
+  timeframe: CandleTimeframe;
   candleHours: number;
   source: "meteora" | "geckoterminal";
   feeSource: "volume-history" | "fee-rate" | "mixed";
   candles: Candle[];
 }
 
+const HOURS: Record<CandleTimeframe, number> = { "1h": 1, "4h": 4, "12h": 12, "24h": 24 };
+
+export function seriesSpanDays(series: CandleSeries): number {
+  const first = series.candles[0];
+  const last = series.candles[series.candles.length - 1];
+  if (!first || !last) return 0;
+  return Math.max(0, (last.timestamp - first.timestamp) / 86_400);
+}
+
 const MIN_BARS = 8;
 
+/**
+ * Pools younger than 36h use 1h bars over two days. Pools younger than 20
+ * days use 4h bars over 16 days, which is as far as that timeframe accepts.
+ * Older pools use daily bars over 90 days when that series actually covers
+ * at least 20 days. A daily bar's high/low path is coarser than 4h.
+ */
 export async function fetchCandleSeries(pool: DiscoveredPool, nowMs: number): Promise<CandleSeries> {
-  const young = ageHours(pool.createdAtMs, nowMs) < 36;
-  const timeframe: "1h" | "4h" = young ? "1h" : "4h";
-  const windowSec = young ? 48 * 3600 : 14 * 24 * 3600;
+  const age = ageHours(pool.createdAtMs, nowMs);
   const end = Math.floor(nowMs / 1000);
-  const start = end - windowSec;
-  const meteora = await fetchMeteora(pool, timeframe, start, end);
-  if (meteora.candles.length >= MIN_BARS) return meteora;
+  const chosen = age < 36
+    ? await fetchMeteora(pool, "1h", end - 48 * 3600, end)
+    : age < 24 * 20
+      ? await fetchMeteora(pool, "4h", end - 16 * 24 * 3600, end)
+      : await chooseLongSeries(pool, end);
+  if (chosen.candles.length >= MIN_BARS) return chosen;
   const gecko = await fetchGecko(pool, nowMs);
-  if (gecko.candles.length > meteora.candles.length) return gecko;
-  return meteora;
+  if (gecko.candles.length > chosen.candles.length) return gecko;
+  return chosen;
+}
+
+async function chooseLongSeries(pool: DiscoveredPool, end: number): Promise<CandleSeries> {
+  const daily = await fetchMeteora(pool, "24h", end - 90 * 24 * 3600, end);
+  if (daily.candles.length >= MIN_BARS && seriesSpanDays(daily) >= 20) return daily;
+  const intraday = await fetchMeteora(pool, "4h", end - 16 * 24 * 3600, end);
+  if (intraday.candles.length >= daily.candles.length) return intraday;
+  return daily.candles.length > 0 ? daily : intraday;
 }
 
 async function fetchMeteora(
   pool: DiscoveredPool,
-  timeframe: "1h" | "4h",
+  timeframe: CandleTimeframe,
   start: number,
   end: number,
 ): Promise<CandleSeries> {
-  const candleHours = timeframe === "1h" ? 1 : 4;
-  const [ohlcvBody, volumeBody] = await Promise.all([
-    getJsonRetry<unknown>(
-      `${DLMM_API_BASE}/pools/${pool.address}/ohlcv?timeframe=${timeframe}&start_time=${start}&end_time=${end}`,
-    ),
-    getJsonRetry<unknown>(
-      `${DLMM_API_BASE}/pools/${pool.address}/volume/history?timeframe=${timeframe}&start_time=${start}&end_time=${end}`,
-    ).catch(() => null),
-  ]);
+  const candleHours = HOURS[timeframe];
+  const empty: CandleSeries = {
+    poolAddress: pool.address,
+    timeframe,
+    candleHours,
+    source: "meteora",
+    feeSource: "fee-rate",
+    candles: [],
+  };
+  let ohlcvBody: unknown;
+  let volumeBody: unknown = null;
+  try {
+    [ohlcvBody, volumeBody] = await Promise.all([
+      getJsonRetry<unknown>(
+        `${DLMM_API_BASE}/pools/${pool.address}/ohlcv?timeframe=${timeframe}&start_time=${start}&end_time=${end}`,
+      ),
+      getJsonRetry<unknown>(
+        `${DLMM_API_BASE}/pools/${pool.address}/volume/history?timeframe=${timeframe}&start_time=${start}&end_time=${end}`,
+      ).catch(() => null),
+    ]);
+  } catch {
+    return empty;
+  }
   const prices = rowsOf(ohlcvBody);
   const feesByTs = new Map<number, number>();
   for (const row of rowsOf(volumeBody)) {

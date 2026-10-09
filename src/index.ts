@@ -6,6 +6,7 @@ import { createDefaultDeps, monitorPositions, runPipeline, type RunOptions } fro
 import { renderBook, renderReport, renderScan } from "./report.js";
 import { scanPools } from "./scanner/scanner.js";
 import { loadStrategyBundle } from "./strategy/loader.js";
+import { runDaily } from "./tournament/daily.js";
 import { markForwardBook, summarizeForward } from "./tournament/forward.js";
 import { runTournament } from "./tournament/run.js";
 import type { PaperBook } from "./types.js";
@@ -76,6 +77,20 @@ async function main(): Promise<void> {
     console.log(`\nTrials: ${result.trials}`);
     console.log(`Leaderboard: ${result.markdownPath}`);
     if (result.forward) console.log(summarizeForward(result.forward));
+    return;
+  }
+  if (cli.command === "daily") {
+    const forwardPath = resolve(process.cwd(), "data/tournament-forward.json");
+    const reportsDir = resolve(process.cwd(), "reports");
+    const dailyPath = await runDaily({
+      reportsDir,
+      strategiesDir: config.strategiesDir,
+      forwardPath,
+      sizeUsd: cli.sizeUsd,
+      poolsPerBucket: cli.poolsPerBucket,
+      onProgress: (message) => console.log(message),
+    });
+    console.log(`\nDaily summary: ${dailyPath}`);
     return;
   }
   if (cli.command === "tournament-mark") {
@@ -163,8 +178,9 @@ function helpText(): string {
     "  scan      Rank live DLMM pools and exit",
     "  monitor   Mark open paper positions against fresh pool data",
     "  book      Print the paper book",
-    "  tournament       Backtest the strategy grid and open the forward paper book",
+    "  tournament       Backtest the strategy grid. Creates the forward book only if it is missing",
     "  tournament-mark  Mark the forward paper book against live pools",
+    "  daily            Mark forward positions, open new paper trials, rerun the tournament",
     "",
     "Flags:",
     "  --fresh                 Replace the paper book before running",

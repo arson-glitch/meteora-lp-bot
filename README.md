@@ -103,14 +103,17 @@ Set in `.env`. Defaults:
 
 ## Strategy tournament
 
-The tournament is paper-only. It does not read `MODE`, does not import the live executor, and does not use the 3-position cap. `npm run tournament` writes `reports/leaderboard.md`, `.csv`, and `.json`, replaces `strategies/winners/*.json` when a bucket clears the guards, and opens `data/tournament-forward.json`.
+The tournament is paper-only. It does not import the live executor and does not use the 3-position cap. `npm run tournament` writes `reports/leaderboard.md`, `.csv`, and `.json`, and replaces `strategies/winners/*.json` when a bucket clears both the time split and the cross-coin holdout. It creates `data/tournament-forward.json` only when that file is missing, so a rerun does not wipe marked paper positions.
 
 ```bash
 npm run tournament
-npx tsx src/index.ts tournament-mark
+npm run tournament-mark
+npm run daily
 ```
 
-`tournament-mark` advances that forward book against live pool prices. It can track every grid cell at once. The normal `monitor` command still only marks the small paper book.
+`tournament-mark` advances the forward book against live pool prices. `npm run daily` marks that book, opens the 108-cell grid on one new unscanned coin per bucket, reruns the tournament, and writes `reports/daily/YYYY-MM-DD.md` with the forward PnL, winner changes, and dollars versus simply holding the entry tokens.
+
+Each bucket targets 18 coins. A second pool is added when the same coin has another bin step, and a third when the bucket has fewer than 15 coins. About 30% of coin keys are a holdout: those coins are replayed on their full history and never used to rank strategies. Older pools use daily Meteora bars over up to 90 days. Younger pools stay on 4-hour or 1-hour bars because the API rejects longer intraday windows.
 
 ### Coin types
 
@@ -150,9 +153,9 @@ Bin step is not a cell. The pool creator sets it. The grid does not search it, a
 
 ### Backtest and scoring
 
-Older pools use 4-hour Meteora candles over 14 days. Pools younger than 36 hours use 1-hour candles over 48 hours. GeckoTerminal is the fallback when Meteora returns fewer than eight bars. Fee math is the same pro-rata estimate as the paper executor. The leaderboard states the approximations: frozen TVL, OHLC wick path, no gas, no re-entry, and a temporal train/test split on the same pools.
+Older pools use daily Meteora candles over 90 days when that series covers at least 20 days. Pools younger than 20 days use 4-hour candles over 16 days. Pools younger than 36 hours use 1-hour candles over 48 hours. GeckoTerminal is the fallback when Meteora returns fewer than eight bars. Fee math is the same pro-rata estimate as the paper executor.
 
-A winner is written only when at least three train trials exist, the strategy is in the top five by train median return, the test replay has at least three trials, and both the test median and the test mean return are positive. Otherwise that bucket keeps the hand-written placeholder.
+Ranking uses train coins and the first 70% of their candles. The top five are re-ranked on the last 30% of those same candles. A winner also has to make money on the held-out coins, which are replayed on their full history and never appear in the ranking. The time-split sample needs at least eight train trials and five test trials, and the holdout needs at least four trials, each with a positive median and a positive mean. Otherwise that bucket keeps the hand-written placeholder.
 
 ## Adding a strategy
 

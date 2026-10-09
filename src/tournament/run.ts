@@ -1,18 +1,21 @@
-import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { sleep } from "../http.js";
 import { parseStrategy, type StrategyConfig } from "../strategy/schema.js";
 import type { CoinType, DiscoveredPool } from "../types.js";
 import { replayStrategy, splitCandles, MIN_SERIES_CANDLES, type TrialResult } from "./backtest.js";
-import { fetchCandleSeries, type CandleSeries } from "./candles.js";
+import { fetchCandleSeries, seriesSpanDays, type CandleSeries } from "./candles.js";
+import { sampleKey } from "./classify.js";
 import {
-  assignBuckets,
-  CANDIDATES_PER_BUCKET,
+  CANDIDATE_COINS_PER_BUCKET,
   discoverTournamentPools,
-  MAX_POOLS_PER_BUCKET,
+  enrichPriceChange,
+  selectTournamentBuckets,
+  TARGET_COINS_PER_BUCKET,
   type BucketAssignment,
 } from "./discover.js";
-import { openForwardBook, saveForwardBook, type TournamentForwardBook } from "./forward.js";
+import { splitCoinKeys } from "./holdout.js";
+import { loadForwardBook, openForwardBook, saveForwardBook, type TournamentForwardBook } from "./forward.js";
 import { gridCells, gridStrategies, strategyFromCell, type GridCell } from "./grid.js";
 import { renderLeaderboardCsv, renderLeaderboardMarkdown, type PoolSample } from "./report.js";
 import { scoreTrials, type BucketLeaderboard } from "./score.js";
@@ -25,6 +28,7 @@ export interface TournamentRunOptions {
   strategiesDir: string;
   forwardPath: string;
   writeForward?: boolean;
+  universe?: DiscoveredPool[];
   onProgress?: (message: string) => void;
 }
 
@@ -44,12 +48,24 @@ export interface TournamentRunResult {
 export async function runTournament(options: TournamentRunOptions): Promise<TournamentRunResult> {
   const nowMs = options.nowMs ?? Date.now();
   const sizeUsd = options.sizeUsd ?? 250;
-  const perBucket = options.poolsPerBucket ?? MAX_POOLS_PER_BUCKET;
+  const coinTarget = options.poolsPerBucket ?? TARGET_COINS_PER_BUCKET;
   const log = options.onProgress ?? (() => {});
   log("Discovering DLMM pools for the tournament");
-  const universe = await discoverTournamentPools(nowMs);
-  const buckets = assignBuckets(universe, nowMs, Math.max(perBucket, CANDIDATES_PER_BUCKET));
-  log(buckets.map((bucket) => `${bucket.type}: ${bucket.pools.map((pool) => pool.name).join(", ") || "none"}`).join("\n"));
+  const universe = options.universe ?? (await discoverTournamentPools(nowMs));
+  let buckets = selectTournamentBuckets(universe, nowMs, Math.max(coinTarget, CANDIDATE_COINS_PER_BUCKET));
+  const primary = buckets.flatMap((bucket) => {
+    const seen = new Set<string>();
+    return bucket.pools.filter((pool) => {
+      const key = sampleKey(pool);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  });
+  log(`Enriching price change for ${primary.length} coins`);
+  await enrichPriceChange(primary);
+  buckets = selectTournamentBuckets(universe, nowMs, Math.max(coinTarget, CANDIDATE_COINS_PER_BUCKET));
+  log(buckets.map((bucket) => `${bucket.type}: ${uniqueNames(bucket.pools)}`).join("\n"));
 
   const cells = gridCells();
   const strategies = gridStrategies();
@@ -58,25 +74,39 @@ export async function runTournament(options: TournamentRunOptions): Promise<Tour
   const played = new Map<CoinType, DiscoveredPool[]>();
 
   for (const bucket of buckets) {
-    let used = 0;
-    const accepted: DiscoveredPool[] = [];
+    const ready: Array<{ pool: DiscoveredPool; series: CandleSeries }> = [];
+    const coins = new Set<string>();
     for (const pool of bucket.pools) {
-      if (used >= perBucket) break;
+      const key = sampleKey(pool);
+      const primaryCoin = !coins.has(key);
+      if (primaryCoin && coins.size >= coinTarget) continue;
+      if (!primaryCoin && !coins.has(key)) continue;
       log(`Candles ${bucket.type} ${pool.name}`);
       let series: CandleSeries;
       try {
         series = await fetchCandleSeries(pool, nowMs);
       } catch (error) {
         samples.push(skipped(bucket.type, pool, error instanceof Error ? error.message : String(error)));
-        await sleep(200);
+        await sleep(120);
         continue;
       }
-      await sleep(200);
+      await sleep(120);
       if (series.candles.length < MIN_SERIES_CANDLES) {
         samples.push(skipped(bucket.type, pool, `only ${series.candles.length} candles`));
         continue;
       }
-      used += 1;
+      if (primaryCoin) coins.add(key);
+      ready.push({ pool, series });
+    }
+    const { trainKeys, holdoutKeys } = splitCoinKeys([...coins]);
+    const trainKeySet = new Set(trainKeys);
+    const holdoutKeySet = new Set(holdoutKeys);
+    log(`${bucket.type}: ${trainKeys.length} train coins, ${holdoutKeys.length} holdout coins, ${ready.length} pools`);
+    const accepted: DiscoveredPool[] = [];
+    for (const { pool, series } of ready) {
+      const key = sampleKey(pool);
+      const holdout = holdoutKeySet.has(key);
+      if (!holdout && !trainKeySet.has(key)) continue;
       accepted.push(pool);
       samples.push({
         coinType: bucket.type,
@@ -89,31 +119,48 @@ export async function runTournament(options: TournamentRunOptions): Promise<Tour
         timeframe: series.timeframe,
         source: series.source,
         feeSource: series.feeSource,
+        spanDays: seriesSpanDays(series),
+        role: holdout ? "holdout" : "train",
       });
-      const { train, test } = splitCandles(series.candles);
-      for (const strategy of strategies) {
-        const trainTrial = replayStrategy({
-          pool,
-          strategy,
-          candles: train,
-          sizeUsd,
-          candleHours: series.candleHours,
-          coinType: bucket.type,
-          split: "train",
-        });
-        const testTrial = replayStrategy({
-          pool,
-          strategy,
-          candles: test,
-          sizeUsd,
-          candleHours: series.candleHours,
-          coinType: bucket.type,
-          split: "test",
-        });
-        if (trainTrial) trials.push(trainTrial);
-        if (testTrial) trials.push(testTrial);
+      if (holdout) {
+        for (const strategy of strategies) {
+          const trial = replayStrategy({
+            pool,
+            strategy,
+            candles: series.candles,
+            sizeUsd,
+            candleHours: series.candleHours,
+            coinType: bucket.type,
+            split: "holdout",
+          });
+          if (trial) trials.push(trial);
+        }
+      } else {
+        const { train, test } = splitCandles(series.candles);
+        for (const strategy of strategies) {
+          const trainTrial = replayStrategy({
+            pool,
+            strategy,
+            candles: train,
+            sizeUsd,
+            candleHours: series.candleHours,
+            coinType: bucket.type,
+            split: "train",
+          });
+          const testTrial = replayStrategy({
+            pool,
+            strategy,
+            candles: test,
+            sizeUsd,
+            candleHours: series.candleHours,
+            coinType: bucket.type,
+            split: "test",
+          });
+          if (trainTrial) trials.push(trainTrial);
+          if (testTrial) trials.push(testTrial);
+        }
       }
-      log(`Replayed ${pool.name} (${series.candles.length} ${series.timeframe} candles, ${series.feeSource})`);
+      log(`Replayed ${pool.name} (${series.candles.length} ${series.timeframe}, ${holdout ? "holdout" : "train"})`);
     }
     played.set(bucket.type, accepted);
   }
@@ -134,16 +181,21 @@ export async function runTournament(options: TournamentRunOptions): Promise<Tour
 
   let forward: TournamentForwardBook | null = null;
   if (options.writeForward !== false) {
-    const forwardBuckets: BucketAssignment[] = buckets.map((bucket) => {
-      const accepted = played.get(bucket.type) ?? [];
-      return {
-        type: bucket.type,
-        pools: (accepted.length > 0 ? accepted : bucket.pools).slice(0, 1),
-      };
-    });
-    forward = openForwardBook({ buckets: forwardBuckets, strategies, sizeUsd, nowMs });
-    saveForwardBook(options.forwardPath, forward);
-    log(`Opened ${forward.positions.length} forward paper positions`);
+    if (existsSync(options.forwardPath)) {
+      forward = loadForwardBook(options.forwardPath);
+      log(`Left existing forward book in place (${forward.positions.length} positions)`);
+    } else {
+      const forwardBuckets: BucketAssignment[] = buckets.map((bucket) => {
+        const accepted = played.get(bucket.type) ?? [];
+        return {
+          type: bucket.type,
+          pools: (accepted.length > 0 ? accepted : bucket.pools).slice(0, 1),
+        };
+      });
+      forward = openForwardBook({ buckets: forwardBuckets, strategies, sizeUsd, nowMs });
+      saveForwardBook(options.forwardPath, forward);
+      log(`Opened ${forward.positions.length} forward paper positions`);
+    }
   }
 
   return { boards, samples, trials: trials.length, winnerIds, forward, markdownPath };
@@ -207,6 +259,18 @@ function strategyToJson(config: StrategyConfig): unknown {
       outOfRangeTimeoutHours: config.exit.outOfRangeTimeoutHours ?? null,
     },
   };
+}
+
+function uniqueNames(pools: DiscoveredPool[]): string {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const pool of pools) {
+    const key = sampleKey(pool);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(pool.name);
+  }
+  return names.join(", ") || "none";
 }
 
 function skipped(coinType: CoinType, pool: DiscoveredPool, reason: string): PoolSample {

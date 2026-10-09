@@ -126,6 +126,7 @@ async function fetchList(
 }
 
 export async function fetchDlmmPools(params: {
+  page?: number;
   pageSize: number;
   sortBy: string;
   filterBy?: string;
@@ -133,7 +134,7 @@ export async function fetchDlmmPools(params: {
   query?: string;
 }): Promise<DiscoveredPool[]> {
   const query: Record<string, string> = {
-    page: "1",
+    page: String(params.page ?? 1),
     page_size: String(params.pageSize),
     sort_by: params.sortBy,
   };
