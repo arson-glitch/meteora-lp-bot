@@ -1,4 +1,5 @@
 import { absPriceChangeH24Pct, ageHours, isStablePair } from "../markets.js";
+import { classifyPool } from "../tournament/classify.js";
 import type { DiscoveredPool } from "../types.js";
 import type { EntryClause, StrategyConfig } from "./schema.js";
 
@@ -55,6 +56,7 @@ export function pickStrategy(
 
 export function strategyMatches(pool: DiscoveredPool, strategy: StrategyConfig, nowMs: number): boolean {
   if (strategy.product !== "dlmm" || pool.product !== "dlmm" || pool.binStep === null) return false;
+  if (strategy.coinType && classifyPool(pool, nowMs).type !== strategy.coinType) return false;
   if (!clauseMatches(pool, strategy.requires, nowMs)) return false;
   if (strategy.when.length === 0) return true;
   return strategy.when.some((clause) => clauseMatches(pool, clause, nowMs));

@@ -128,15 +128,18 @@ async function fetchList(
 export async function fetchDlmmPools(params: {
   pageSize: number;
   sortBy: string;
-  filterBy: string;
+  filterBy?: string;
   listSource: "volume" | "new";
+  query?: string;
 }): Promise<DiscoveredPool[]> {
-  const rows = await fetchList(DLMM_API_BASE, {
+  const query: Record<string, string> = {
     page: "1",
     page_size: String(params.pageSize),
     sort_by: params.sortBy,
-    filter_by: params.filterBy,
-  });
+  };
+  if (params.filterBy) query.filter_by = params.filterBy;
+  if (params.query) query.query = params.query;
+  const rows = await fetchList(DLMM_API_BASE, query);
   return rows
     .map((row) => mapPool(row, "dlmm", params.listSource))
     .filter((pool) => pool.address && !pool.isBlacklisted);

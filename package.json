@@ -13,6 +13,8 @@
     "scan": "tsx src/index.ts scan",
     "monitor": "tsx src/index.ts monitor",
     "book": "tsx src/index.ts book",
+    "tournament": "MODE=paper tsx src/index.ts tournament",
+    "tournament-mark": "MODE=paper tsx src/index.ts tournament-mark",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

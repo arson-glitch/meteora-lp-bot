@@ -61,5 +61,6 @@ export const DLMM_API_BASE = "https://dlmm.datapi.meteora.ag";
 export const DAMM_V2_API_BASE = "https://damm-v2.datapi.meteora.ag";
 export const RUGCHECK_API_BASE = "https://api.rugcheck.xyz";
 export const DEXSCREENER_API_BASE = "https://api.dexscreener.com";
+export const GECKOTERMINAL_API_BASE = "https://api.geckoterminal.com/api/v2";
 
 export const BPS_DENOMINATOR = 10_000;

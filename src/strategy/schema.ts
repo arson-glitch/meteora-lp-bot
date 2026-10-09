@@ -1,5 +1,5 @@
 import { MAX_BINS_PER_POSITION, MAX_BIN_STEP } from "../constants.js";
-import type { Sidedness, StrategyShape } from "../types.js";
+import type { CoinType, QuoteSide, Sidedness, StrategyShape } from "../types.js";
 
 /**
  * Strategy files are data. Drop a new JSON file in /strategies and the loader
@@ -35,6 +35,13 @@ export interface StrategyConfig {
   binsBelow: number;
   binsAbove: number;
   sidedness: Sidedness;
+  /**
+   * When set, the executor remaps bins onto the pool's quote or base token.
+   * Hand-written files leave this empty and use `sidedness` as-is.
+   */
+  quoteSide?: QuoteSide | null;
+  /** When set, the strategy matches only pools in this bucket. */
+  coinType?: CoinType | null;
   priority: number;
   manualOnly: boolean;
   requires: EntryClause;
@@ -45,8 +52,20 @@ export interface StrategyConfig {
     stopLossPct: number;
     takeProfitPct: number | null;
     maxHoldHours: number | null;
+    /** Null or omitted closes as soon as the active bin leaves the range. */
+    outOfRangeTimeoutHours?: number | null;
   };
 }
+
+const COIN_TYPES = new Set<CoinType>([
+  "stable",
+  "bluechip",
+  "fresh-memecoin",
+  "high-vol-trending",
+  "established-midcap",
+  "older-memecoin",
+]);
+const QUOTE_SIDES = new Set<QuoteSide>(["two-sided", "quote", "token"]);
 
 const SHAPES = new Set(["Spot", "Curve", "BidAsk"]);
 const SIDES = new Set(["two-sided", "single-sided-x", "single-sided-y"]);
@@ -83,6 +102,9 @@ export function parseStrategy(raw: unknown, filename: string): StrategyConfig {
   if (stopLossPct <= 0 || stopLossPct >= 1) {
     throw new Error(`${filename}: stopLossPct must be a fraction between 0 and 1`);
   }
+  const outOfRangeTimeoutHours = optionalHours(exit, "outOfRangeTimeoutHours", filename);
+  const coinType = optionalEnum(row, "coinType", COIN_TYPES, filename);
+  const quoteSide = optionalEnum(row, "quoteSide", QUOTE_SIDES, filename);
   const requires = parseClause(row.requires ?? {}, `${filename} requires`);
   if (requires.maxBinStep !== undefined && requires.maxBinStep > MAX_BIN_STEP) {
     throw new Error(`${filename}: maxBinStep cannot exceed ${MAX_BIN_STEP}`);
@@ -102,6 +124,8 @@ export function parseStrategy(raw: unknown, filename: string): StrategyConfig {
     binsBelow,
     binsAbove,
     sidedness: sidedness as Sidedness,
+    quoteSide,
+    coinType,
     priority: requireNumber(row, "priority", filename),
     manualOnly: row.manualOnly === true,
     requires,
@@ -116,6 +140,7 @@ export function parseStrategy(raw: unknown, filename: string): StrategyConfig {
       maxHoldHours: exit.maxHoldHours === null || exit.maxHoldHours === undefined
         ? null
         : requireNumber(exit, "maxHoldHours", filename),
+      outOfRangeTimeoutHours,
     },
   };
 }
@@ -175,6 +200,27 @@ function optionalNumber(row: Record<string, unknown>, key: string): number | und
 function requireBoolean(row: Record<string, unknown>, key: string, filename: string): boolean {
   if (typeof row[key] !== "boolean") throw new Error(`${filename}: ${key} must be a boolean`);
   return row[key] as boolean;
+}
+
+function optionalHours(row: Record<string, unknown>, key: string, filename: string): number | null {
+  if (row[key] === undefined || row[key] === null) return null;
+  const value = requireNumber(row, key, filename);
+  if (value < 0) throw new Error(`${filename}: ${key} must be >= 0`);
+  return value;
+}
+
+function optionalEnum<T extends string>(
+  row: Record<string, unknown>,
+  key: string,
+  allowed: Set<T>,
+  filename: string,
+): T | null {
+  if (row[key] === undefined || row[key] === null) return null;
+  const value = requireString(row, key, filename);
+  if (!allowed.has(value as T)) {
+    throw new Error(`${filename}: ${key} must be one of ${[...allowed].join(", ")}`);
+  }
+  return value as T;
 }
 
 function requireStringArray(row: Record<string, unknown>, key: string, filename: string): string[] {

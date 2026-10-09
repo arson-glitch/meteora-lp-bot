@@ -5,7 +5,9 @@ import { createLogger } from "./logger.js";
 import { createDefaultDeps, monitorPositions, runPipeline, type RunOptions } from "./pipeline.js";
 import { renderBook, renderReport, renderScan } from "./report.js";
 import { scanPools } from "./scanner/scanner.js";
-import { loadStrategies } from "./strategy/loader.js";
+import { loadStrategyBundle } from "./strategy/loader.js";
+import { markForwardBook, summarizeForward } from "./tournament/forward.js";
+import { runTournament } from "./tournament/run.js";
 import type { PaperBook } from "./types.js";
 
 interface Cli {
@@ -20,6 +22,9 @@ interface Cli {
   scanLimit?: number;
   top: number;
   verbose: boolean;
+  poolsPerBucket?: number;
+  sizeUsd?: number;
+  skipForward: boolean;
 }
 
 async function main(): Promise<void> {
@@ -27,7 +32,7 @@ async function main(): Promise<void> {
   const cli = parseArgs(process.argv.slice(2));
   const config = loadConfig();
   const log = createLogger({ verbose: cli.verbose, pnlPath: config.pnlPath });
-  const strategies = loadStrategies(config.strategiesDir);
+  const strategies = loadStrategyBundle(config.strategiesDir);
   const deps = createDefaultDeps(config, log, strategies);
   const bookStore = new FileBookStore<PaperBook>(config.bookPath, () => emptyPaperBook());
 
@@ -49,6 +54,35 @@ async function main(): Promise<void> {
       log,
     });
     console.log(renderScan(ranked, Date.now(), cli.top));
+    return;
+  }
+  if (cli.command === "tournament") {
+    const forwardPath = resolve(process.cwd(), "data/tournament-forward.json");
+    const reportsDir = resolve(process.cwd(), "reports");
+    const result = await runTournament({
+      poolsPerBucket: cli.poolsPerBucket,
+      sizeUsd: cli.sizeUsd,
+      reportsDir,
+      strategiesDir: config.strategiesDir,
+      forwardPath,
+      writeForward: !cli.skipForward,
+      onProgress: (message) => console.log(message),
+    });
+    console.log("");
+    for (const board of result.boards) {
+      const winner = board.winner ? board.winner.strategyId : "not promoted";
+      console.log(`${board.coinType}: ${winner}. ${board.promotionNote}`);
+    }
+    console.log(`\nTrials: ${result.trials}`);
+    console.log(`Leaderboard: ${result.markdownPath}`);
+    if (result.forward) console.log(summarizeForward(result.forward));
+    return;
+  }
+  if (cli.command === "tournament-mark") {
+    const forwardPath = resolve(process.cwd(), "data/tournament-forward.json");
+    const book = await markForwardBook(forwardPath, Date.now());
+    console.log(summarizeForward(book));
+    console.log(`Forward book: ${forwardPath}`);
     return;
   }
   if (cli.command === "monitor") {
@@ -114,6 +148,9 @@ function parseArgs(argv: string[]): Cli {
     scanLimit: num("scan-limit"),
     top: num("top") ?? 8,
     verbose: flags.get("verbose") === true,
+    poolsPerBucket: num("pools-per-bucket"),
+    sizeUsd: num("size-usd"),
+    skipForward: flags.get("skip-forward") === true,
   };
 }
 
@@ -126,6 +163,8 @@ function helpText(): string {
     "  scan      Rank live DLMM pools and exit",
     "  monitor   Mark open paper positions against fresh pool data",
     "  book      Print the paper book",
+    "  tournament       Backtest the strategy grid and open the forward paper book",
+    "  tournament-mark  Mark the forward paper book against live pools",
     "",
     "Flags:",
     "  --fresh                 Replace the paper book before running",
@@ -137,6 +176,9 @@ function helpText(): string {
     "  --force-strategy        Use --strategy even when its entry rules miss",
     "  --confirm-live          Required together with MODE=live and WALLET_PRIVATE_KEY",
     "  --top <n>               How many ranked pools to print",
+    "  --pools-per-bucket <n>  Pools replayed per coin type (default 4)",
+    "  --size-usd <n>          Simulated deposit per trial (default 250)",
+    "  --skip-forward          Skip the forward paper book",
     "  --verbose",
     "",
     "Paper mode is the default. No wallet is required.",

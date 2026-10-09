@@ -3,6 +3,22 @@ export type StrategyShape = "Spot" | "Curve" | "BidAsk";
 export type Sidedness = "two-sided" | "single-sided-x" | "single-sided-y";
 export type RunMode = "paper" | "live";
 
+/**
+ * Exclusive pool buckets. Rules and thresholds live in src/tournament/classify.ts.
+ * First match wins: stable, bluechip, fresh memecoin, high-vol trending,
+ * established mid-cap, older memecoin.
+ */
+export type CoinType =
+  | "stable"
+  | "bluechip"
+  | "fresh-memecoin"
+  | "high-vol-trending"
+  | "established-midcap"
+  | "older-memecoin";
+
+/** Which inventory the strategy wants, resolved to token X/Y per pool. */
+export type QuoteSide = "two-sided" | "quote" | "token";
+
 export interface PoolToken {
   address: string;
   symbol: string;
@@ -105,6 +121,10 @@ export interface PaperPosition {
   onOutOfRange: "close" | "rebalance";
   rebalanceEdgeBins: number;
   maxHoldHours: number | null;
+  /** Null closes on the first out-of-range mark. A positive value waits, in hours. */
+  outOfRangeTimeoutHours?: number | null;
+  /** ISO time of the mark that first left the range, while a timeout is running. */
+  outOfRangeSince?: string | null;
   tokenX: { address: string; symbol: string; decimals: number };
   tokenY: { address: string; symbol: string; decimals: number };
 }

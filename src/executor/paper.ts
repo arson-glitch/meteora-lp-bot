@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { binIdFromPrice, priceFromBinId } from "../math/bins.js";
 import { allocateByWeight, strategyBinWeights } from "../math/distribution.js";
 import { estimateLpFeesUsd } from "../math/fees.js";
+import { layoutForStrategy } from "../strategy/sides.js";
 import type { StrategyConfig } from "../strategy/schema.js";
 import type { DiscoveredPool, PaperPosition, SimBin } from "../types.js";
 import { markValueUsd, unrealizedPnlUsd } from "./pnl.js";
@@ -28,9 +29,10 @@ export interface AdvanceResult {
 export function planPosition(pool: DiscoveredPool, strategy: StrategyConfig): PositionPlan {
   if (pool.binStep === null) throw new Error("DLMM plan requires a bin step");
   if (!(pool.currentPrice > 0)) throw new Error("DLMM plan requires a positive price");
+  const layout = layoutForStrategy(pool, strategy);
   const activeBinId = binIdFromPrice(pool.currentPrice, pool.binStep, "nearest");
-  const minBinId = activeBinId - strategy.binsBelow;
-  const maxBinId = activeBinId + strategy.binsAbove;
+  const minBinId = activeBinId - layout.binsBelow;
+  const maxBinId = activeBinId + layout.binsAbove;
   const binCount = maxBinId - minBinId + 1;
   return {
     activeBinId,
@@ -48,11 +50,12 @@ export function openPaperPosition(params: {
   nowMs: number;
 }): PaperPosition {
   const plan = planPosition(params.pool, params.strategy);
+  const layout = layoutForStrategy(params.pool, params.strategy);
   const prices = resolvePrices(params.pool);
   const bins = buildBins({
     binStep: params.pool.binStep as number,
     shape: params.strategy.shape,
-    sidedness: params.strategy.sidedness,
+    sidedness: layout.sidedness,
     minBinId: plan.minBinId,
     maxBinId: plan.maxBinId,
     activeBinId: plan.activeBinId,
@@ -72,10 +75,10 @@ export function openPaperPosition(params: {
     strategyName: params.strategy.name,
     placeholderStrategy: params.strategy.placeholder,
     shape: params.strategy.shape,
-    sidedness: params.strategy.sidedness,
+    sidedness: layout.sidedness,
     binStep: params.pool.binStep as number,
-    binsBelow: params.strategy.binsBelow,
-    binsAbove: params.strategy.binsAbove,
+    binsBelow: layout.binsBelow,
+    binsAbove: layout.binsAbove,
     minBinId: plan.minBinId,
     maxBinId: plan.maxBinId,
     activeBinId: plan.activeBinId,
@@ -103,6 +106,8 @@ export function openPaperPosition(params: {
     onOutOfRange: params.strategy.exit.onOutOfRange,
     rebalanceEdgeBins: params.strategy.exit.rebalanceEdgeBins,
     maxHoldHours: params.strategy.exit.maxHoldHours,
+    outOfRangeTimeoutHours: params.strategy.exit.outOfRangeTimeoutHours ?? null,
+    outOfRangeSince: null,
     tokenX: {
       address: params.pool.tokenX.address,
       symbol: params.pool.tokenX.symbol,
@@ -179,14 +184,27 @@ export function advancePosition(params: {
   }
   if (!nowInRange) {
     if (position.onOutOfRange === "rebalance") {
+      position.outOfRangeSince = null;
       recenter(position, params.pool);
       events.push({ type: "rebalance", detail: "recentered after leaving the range" });
+    } else if (outOfRangeTimedOut(position, params.nowMs)) {
+      const waited = (position.outOfRangeTimeoutHours ?? 0) > 0;
+      closePosition(position, params.nowMs, waited ? "out-of-range-timeout" : "out-of-range");
+      events.push({
+        type: "close",
+        detail: waited
+          ? `out of range for ${position.outOfRangeTimeoutHours}h`
+          : "active bin left the position range",
+      });
     } else {
-      closePosition(position, params.nowMs, "out-of-range");
-      events.push({ type: "close", detail: "active bin left the position range" });
+      events.push({
+        type: "mark",
+        detail: `out of range since ${position.outOfRangeSince}; timeout ${position.outOfRangeTimeoutHours}h`,
+      });
     }
     return { position, events };
   }
+  position.outOfRangeSince = null;
   const edge = Math.min(position.activeBinId - position.minBinId, position.maxBinId - position.activeBinId);
   if (
     position.onOutOfRange === "rebalance" &&
@@ -266,6 +284,19 @@ function creditFees(position: PaperPosition, usd: number): void {
 
 function inRange(position: PaperPosition, activeBinId: number): boolean {
   return activeBinId >= position.minBinId && activeBinId <= position.maxBinId;
+}
+
+/**
+ * A missing or zero timeout keeps the original behaviour: close on the first
+ * out-of-range mark. A positive timeout records the first mark and closes
+ * only after that many hours, so a dip back into range can cancel the exit.
+ */
+function outOfRangeTimedOut(position: PaperPosition, nowMs: number): boolean {
+  const timeout = position.outOfRangeTimeoutHours ?? null;
+  if (timeout === null || timeout <= 0) return true;
+  if (!position.outOfRangeSince) position.outOfRangeSince = position.updatedAt;
+  const elapsedHours = (nowMs - Date.parse(position.outOfRangeSince)) / 3_600_000;
+  return elapsedHours >= timeout;
 }
 
 export function lpFeesPerHour(pool: DiscoveredPool): number {

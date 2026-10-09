@@ -8,6 +8,9 @@ DLMM (Dynamic Liquidity Market Maker) is the primary product. DAMM v2 can be lis
 
 ```text
 scanner  ->  rug checker  ->  strategy picker  ->  risk limits  ->  paper executor  ->  monitor
+                              ^
+tournament (paper)  ->  strategies/winners/*.json
+     classify, 108-cell grid, historical replay, forward paper book
    |              |                  |                                    |
    |              |                  |                                    +-- live executor (gated)
  Meteora       RugCheck          strategies/*.json
@@ -23,6 +26,7 @@ scanner  ->  rug checker  ->  strategy picker  ->  risk limits  ->  paper execut
 | `src/strategy` | Loads every `strategies/*.json` file. The picker chooses the highest-priority match. |
 | `src/executor` | Paper-opens, marks, rebalances, and closes. Enforces size, open-count, and daily-loss caps. Logs simulated PnL. |
 | `src/executor/live.ts` | Builds real DLMM transactions with `@meteora-ag/dlmm` only after every live gate passes. |
+| `src/tournament` | Classifies pools, replays a 108-cell strategy grid on historical candles, writes a leaderboard, and paper-trades the grid forward. |
 
 The shipped strategies are **placeholders**. The widths and triggers come from Meteora's public strategy guide, not from a private course. Each file says so in `placeholderNote`.
 
@@ -97,6 +101,59 @@ Set in `.env`. Defaults:
 
 `RUG_FAIL_SCORE` (default 60) is applied to RugCheck's normalised score, treated as higher-is-riskier. Any danger-level risk, or a risk whose name mentions mint or freeze authority, fails the token. Quote mints (SOL, USDC, USDT, and a few other stables) are not treated as the risk asset, because USDC's freeze authority would otherwise fail every SOL-USDC pool. If RugCheck itself errors, the token fails closed (`RUG_FAIL_CLOSED=true`).
 
+## Strategy tournament
+
+The tournament is paper-only. It does not read `MODE`, does not import the live executor, and does not use the 3-position cap. `npm run tournament` writes `reports/leaderboard.md`, `.csv`, and `.json`, replaces `strategies/winners/*.json` when a bucket clears the guards, and opens `data/tournament-forward.json`.
+
+```bash
+npm run tournament
+npx tsx src/index.ts tournament-mark
+```
+
+`tournament-mark` advances that forward book against live pool prices. It can track every grid cell at once. The normal `monitor` command still only marks the small paper book.
+
+### Coin types
+
+Classification is exclusive. The first matching rule wins. Features are pool age, the non-quote asset's market cap and holder count, 24h volume / TVL, and absolute 24h price change when DexScreener has one.
+
+| Bucket | Rule |
+| --- | --- |
+| `stable` | Both symbols are stables (USDC, USDT, USD1, PYUSD, USDS, UXD, USDH, EURC, FDUSD). |
+| `bluechip` | Paired with a quote asset, and the other leg is a named major (SOL, BTC, ETH, JUP, and liquid staking wrappers) at any age, or has market cap at least $1B after the pool is 72 hours old. |
+| `fresh-memecoin` | Pool age under 24 hours. A named major is already bluechip, so a new SOL-USDC pool is not a fresh memecoin. |
+| `high-vol-trending` | Age at least 24 hours, and either the absolute 24h move is at least 25% or 24h volume / TVL is at least 8. |
+| `established-midcap` | Asset market cap at least $20M and under $1B, pool age at least 7 days, and at least 2,000 holders when the API reports a holder count. |
+| `older-memecoin` | Anything that matched none of the above. |
+
+A coin younger than a day stays in `fresh-memecoin` even if the move is already large. A mid-cap with a 25% day is `high-vol-trending`, not `established-midcap`.
+
+### Strategy grid
+
+108 cells: shape (Spot, Curve, Bid-Ask) × width (narrow / medium / wide) × side (two-sided, quote only, token only) × exit.
+
+| Width | Two-sided bins | Single-sided bins |
+| --- | --- | --- |
+| narrow | 2 below, 2 above | 5 on the chosen side |
+| medium | 12 below, 12 above | 20 on the chosen side |
+| wide | 30 below, 30 above | 40 on the chosen side |
+
+Quote versus token is resolved per pool. Price is token Y per token X. Y is the quote when Y is a quote asset, when both legs are quotes, or when neither is.
+
+| Exit id | Behaviour |
+| --- | --- |
+| `oor` | Close on the first out-of-range mark. Stop-loss 12%. |
+| `timeout` | Stay out of range for 12 hours before closing. Stop-loss 12%. |
+| `rebalance` | Recenter when the active bin leaves the range. Stop-loss 18%. |
+| `tp` | Close out of range immediately. Stop-loss 8%, take-profit 15%. |
+
+Bin step is not a cell. The pool creator sets it. The grid does not search it, and winners are not split by bin-step band.
+
+### Backtest and scoring
+
+Older pools use 4-hour Meteora candles over 14 days. Pools younger than 36 hours use 1-hour candles over 48 hours. GeckoTerminal is the fallback when Meteora returns fewer than eight bars. Fee math is the same pro-rata estimate as the paper executor. The leaderboard states the approximations: frozen TVL, OHLC wick path, no gas, no re-entry, and a temporal train/test split on the same pools.
+
+A winner is written only when at least three train trials exist, the strategy is in the top five by train median return, the test replay has at least three trials, and the test median return is positive. Otherwise that bucket keeps the hand-written placeholder.
+
 ## Adding a strategy
 
 Strategies are data. The loader reads every `strategies/*.json` file.
@@ -138,7 +195,7 @@ npm test
 npm run typecheck
 ```
 
-Unit tests cover bin prices, the fee formulas, distribution shapes, ranking, rug decisions, the strategy picker, paper marks (fee accrual, conversion, out-of-range, rebalance, stop-loss), risk caps, the live gate, SDK bin-price parity, and a full paper pipeline with a fake scanner. `npm run simulate` is the live-data run: public Meteora, DexScreener, and RugCheck only.
+Unit tests cover bin prices, the fee formulas, distribution shapes, ranking, rug decisions, the strategy picker, paper marks (fee accrual, conversion, out-of-range, rebalance, stop-loss), risk caps, the live gate, SDK bin-price parity, a full paper pipeline with a fake scanner, the coin classifier, the 108-cell grid, synthetic replays, and the train/test promotion guards. `npm run simulate` is the live-data run of the small paper book. `npm run tournament` is the live-data backtest.
 
 ## Limits of this foundation
 
