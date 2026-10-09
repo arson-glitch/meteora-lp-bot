@@ -40,6 +40,25 @@ export interface TrialResult {
   maxDrawdownPct: number;
   closeReason: string | null;
   rebalanceCount: number;
+  equityCurve?: Array<{ t: number; equity: number }>;
+  terminal?: TerminalState;
+}
+
+export interface TerminalState {
+  amountX: number;
+  amountY: number;
+  feesX: number;
+  feesY: number;
+  priceXUsd: number;
+  priceYUsd: number;
+  activeBinId: number;
+  minBinId: number;
+  maxBinId: number;
+  binStep: number;
+  closed: boolean;
+  rebalanceCount: number;
+  tokenX: { address: string; symbol: string };
+  tokenY: { address: string; symbol: string };
 }
 
 export function splitCandles(candles: Candle[], trainFraction = TRAIN_FRACTION): { train: Candle[]; test: Candle[] } {
@@ -62,6 +81,9 @@ export function replayStrategy(params: {
   candleHours: number;
   coinType: CoinType;
   split: "train" | "test" | "holdout";
+  feeModel?: "tvl-share" | "active-bin";
+  liquidityBins?: number;
+  recordCurve?: boolean;
 }): TrialResult | null {
   const { candles } = params;
   if (candles.length < 2) return null;
@@ -81,6 +103,7 @@ export function replayStrategy(params: {
   let equity = equityUsd(position);
   let peak = equity;
   let maxDrawdown = 0;
+  const curve: Array<{ t: number; equity: number }> = [];
   const endPrice = candles[candles.length - 1]?.close ?? openPrice;
 
   for (let index = 0; index < candles.length; index += 1) {
@@ -98,12 +121,15 @@ export function replayStrategy(params: {
         pool: poolAt(params.pool, price, frozenY, candle, params.candleHours),
         nowMs: clock,
         elapsedHours: legHours,
+        feeModel: params.feeModel,
+        liquidityBins: params.liquidityBins,
       });
       position = stepped.position;
       equity = equityUsd(position);
       peak = Math.max(peak, equity);
       if (peak > 0) maxDrawdown = Math.max(maxDrawdown, (peak - equity) / peak);
     }
+    if (params.recordCurve) curve.push({ t: candle.timestamp, equity });
   }
 
   const markPrice = position.lastPrice > 0 ? position.lastPrice : openPrice;
@@ -130,6 +156,28 @@ export function replayStrategy(params: {
     maxDrawdownPct: maxDrawdown,
     closeReason: position.closeReason ?? null,
     rebalanceCount: position.rebalanceCount,
+    equityCurve: params.recordCurve ? curve : undefined,
+    terminal: params.recordCurve ? terminalState(position) : undefined,
+  };
+}
+
+function terminalState(position: PaperPosition): TerminalState {
+  const amounts = inventoryAmounts(position);
+  return {
+    amountX: amounts.amountX,
+    amountY: amounts.amountY,
+    feesX: position.feesX,
+    feesY: position.feesY,
+    priceXUsd: position.priceXUsd,
+    priceYUsd: position.priceYUsd,
+    activeBinId: position.activeBinId,
+    minBinId: position.minBinId,
+    maxBinId: position.maxBinId,
+    binStep: position.binStep,
+    closed: position.status === "closed",
+    rebalanceCount: position.rebalanceCount,
+    tokenX: { address: position.tokenX.address, symbol: position.tokenX.symbol },
+    tokenY: { address: position.tokenY.address, symbol: position.tokenY.symbol },
   };
 }
 

@@ -16,6 +16,8 @@
     "tournament": "MODE=paper tsx src/index.ts tournament",
     "tournament-mark": "MODE=paper tsx src/index.ts tournament-mark",
     "daily": "MODE=paper tsx src/index.ts daily",
+    "high-vol-edge": "MODE=paper tsx src/index.ts high-vol-edge",
+    "frozen-book": "MODE=paper tsx src/index.ts frozen-book",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

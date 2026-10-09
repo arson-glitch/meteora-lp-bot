@@ -111,7 +111,9 @@ npm run tournament-mark
 npm run daily
 ```
 
-`tournament-mark` advances the forward book against live pool prices. `npm run daily` marks that book, opens the 108-cell grid on one new unscanned coin per bucket, reruns the tournament, and writes `reports/daily/YYYY-MM-DD.md` with the forward PnL, winner changes, and dollars versus simply holding the entry tokens.
+`tournament-mark` advances the forward book against live pool prices. `npm run daily` marks that book, opens the 108-cell grid on one new unscanned coin per bucket, reruns the tournament, opens the frozen high-vol strategy on every newly qualifying high-vol pool, and writes `reports/daily/YYYY-MM-DD.md` with the forward PnL, winner changes, dollars versus simply holding the entry tokens, and the frozen book's liquidation PnL.
+
+The promoted high-vol cell is frozen in `strategies/frozen/high-vol-2026-10-09.json`. `loadFrozenStrategy` rejects the file if the parameter hash does not match. Its paper book is `data/frozen-high-vol-forward.json`, separate from the 108-cell book. `npm run high-vol-edge` reprices that cell on the leaderboard's high-vol pools with and without exit costs, and with TVL fee share versus active-bin fee share.
 
 Each bucket targets 18 coins. A second pool is added when the same coin has another bin step, and a third when the bucket has fewer than 15 coins. About 30% of coin keys are a holdout: those coins are replayed on their full history and never used to rank strategies. Older pools use daily Meteora bars over up to 90 days. Younger pools stay on 4-hour or 1-hour bars because the API rejects longer intraday windows.
 

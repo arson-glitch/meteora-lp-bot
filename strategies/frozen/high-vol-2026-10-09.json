@@ -1,0 +1,40 @@
+{
+  "version": "2026-10-09",
+  "frozenAt": "2026-10-09T19:45:00.000Z",
+  "sourceStrategyId": "grid-bidask-wide-quote-tp",
+  "parameterHash": "1457301141599b71eac3716df5acf5522f379e9cab67b480bb24f79cdd2d0b22",
+  "costModelVersion": "2026-10-09",
+  "note": "Frozen from the high-vol cell promoted on 2026-10-09. Bid-Ask, wide, quote-sided, close out of range, 8% stop, 15% take-profit. The hash covers shape, width, side, and exit.",
+  "strategy": {
+    "id": "frozen-high-vol-bidask-wide-quote-tp-2026-10-09",
+    "name": "Frozen high-vol Bid-Ask wide quote take-profit",
+    "description": "BidAsk / wide / quote / tp, parameters frozen on 2026-10-09 from grid-bidask-wide-quote-tp.",
+    "placeholder": false,
+    "placeholderNote": "Frozen tournament cell. Not a hand-written placeholder.",
+    "docs": [
+      "https://docs.meteora.ag/core-products/dlmm/strategies-and-use-cases",
+      "https://docs.meteora.ag/core-products/dlmm/formulas",
+      "https://docs.meteora.ag/core-products/dlmm/what-is-dlmm"
+    ],
+    "notes": "Do not edit the economic fields. loadFrozenStrategy rejects a hash mismatch.",
+    "product": "dlmm",
+    "shape": "BidAsk",
+    "binsBelow": 40,
+    "binsAbove": 0,
+    "sidedness": "single-sided-y",
+    "quoteSide": "quote",
+    "coinType": "high-vol-trending",
+    "priority": 0,
+    "manualOnly": true,
+    "requires": {},
+    "when": [],
+    "exit": {
+      "onOutOfRange": "close",
+      "rebalanceEdgeBins": 0,
+      "stopLossPct": 0.08,
+      "takeProfitPct": 0.15,
+      "maxHoldHours": null,
+      "outOfRangeTimeoutHours": null
+    }
+  }
+}

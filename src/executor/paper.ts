@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { activeBinFeeUsd, assumedLiquidityBins } from "../math/activeBin.js";
 import { binIdFromPrice, priceFromBinId } from "../math/bins.js";
 import { allocateByWeight, strategyBinWeights } from "../math/distribution.js";
 import { estimateLpFeesUsd } from "../math/fees.js";
@@ -127,6 +128,13 @@ export function advancePosition(params: {
   pool: DiscoveredPool;
   nowMs: number;
   elapsedHours?: number;
+  /**
+   * `tvl-share` is the default: in-range value / pool TVL.
+   * `active-bin` pays the pool's LP fees only to the active bin, by that
+   * bin's share of an assumed uniform pool distribution.
+   */
+  feeModel?: "tvl-share" | "active-bin";
+  liquidityBins?: number;
 }): AdvanceResult {
   const position = structuredClone(params.position);
   const events: AdvanceResult["events"] = [];
@@ -151,13 +159,23 @@ export function advancePosition(params: {
   const wasInRange = inRange(position, previousActive);
   const nowInRange = inRange(position, nextActive);
   const factor = wasInRange && nowInRange ? 1 : wasInRange || nowInRange ? 0.5 : 0;
-  const feeUsd = estimateLpFeesUsd({
-    poolLpFeesPerHour: lpFeesPerHour(params.pool),
-    poolTvlUsd: params.pool.tvlUsd,
-    positionValueUsd: markValueUsd(position),
-    hours: elapsed,
-    inRangeFactor: factor,
-  });
+  const feeUsd = params.feeModel === "active-bin"
+    ? activeBinFeeUsd({
+        poolLpFeesPerHour: lpFeesPerHour(params.pool),
+        hours: elapsed,
+        poolTvlUsd: params.pool.tvlUsd,
+        liquidityBins: params.liquidityBins ?? assumedLiquidityBins(params.pool),
+        bin: position.bins.find((bin) => bin.binId === nextActive) ?? null,
+        priceXUsd: position.priceXUsd,
+        priceYUsd: position.priceYUsd,
+      })
+    : estimateLpFeesUsd({
+        poolLpFeesPerHour: lpFeesPerHour(params.pool),
+        poolTvlUsd: params.pool.tvlUsd,
+        positionValueUsd: markValueUsd(position),
+        hours: elapsed,
+        inRangeFactor: factor,
+      });
   creditFees(position, feeUsd);
   position.lastFeeMarkAt = position.updatedAt;
   events.push({

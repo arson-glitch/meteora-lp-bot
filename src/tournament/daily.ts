@@ -18,6 +18,8 @@ import {
   saveForwardBook,
   type ForwardStatus,
 } from "./forward.js";
+import { FROZEN_STRATEGY_FILE } from "./frozen.js";
+import { syncFrozenHighVolBook, type FrozenBookStatus } from "./frozenBook.js";
 import { gridStrategies } from "./grid.js";
 import type { BucketLeaderboard } from "./score.js";
 import { runTournament } from "./run.js";
@@ -29,6 +31,8 @@ export interface DailyOptions {
   forwardPath: string;
   sizeUsd?: number;
   poolsPerBucket?: number;
+  frozenPath?: string;
+  frozenBookPath?: string;
   onProgress?: (message: string) => void;
 }
 
@@ -79,6 +83,15 @@ export async function runDaily(options: DailyOptions): Promise<string> {
   saveForwardBook(options.forwardPath, appended.book);
   log(`Opened ${appended.added.length} new forward pools`);
 
+  const frozen = await syncFrozenHighVolBook({
+    path: options.frozenBookPath ?? options.forwardPath.replace(/tournament-forward\.json$/, "frozen-high-vol-forward.json"),
+    frozenPath: options.frozenPath ?? FROZEN_STRATEGY_FILE,
+    universe,
+    nowMs,
+    sizeUsd,
+    onProgress: log,
+  });
+
   const result = await runTournament({
     nowMs,
     sizeUsd,
@@ -106,6 +119,7 @@ export async function runDaily(options: DailyOptions): Promise<string> {
       boards: result.boards,
       prior,
       trials: result.trials,
+      frozen,
     }),
   );
   return path;
@@ -120,6 +134,7 @@ function renderDaily(params: {
   boards: BucketLeaderboard[];
   prior: Map<string, string | null> | null;
   trials: number;
+  frozen: FrozenBookStatus;
 }): string {
   const lines: string[] = [];
   lines.push(`# Paper daily ${params.generatedAt.slice(0, 10)}`);
@@ -182,7 +197,9 @@ function renderDaily(params: {
   lines.push("");
   for (const board of params.boards) lines.push(`- ${board.coinType}: ${board.promotionNote}`);
   lines.push("");
-  lines.push("Fee share is still candle LP fees times position value over frozen TVL. Daily bars, when used, treat the day's high and low as a path. Holdout coins never enter the ranking. Full rows are in `reports/leaderboard.md`.");
+  lines.push("Fee share in the leaderboard is still candle LP fees times position value over frozen TVL. The frozen high-vol book below uses active-bin fee share and subtracts exit slippage, transaction fees, and non-refundable bin-array rent. Daily bars, when used, treat the day's high and low as a path. Holdout coins never enter the ranking. Full rows are in `reports/leaderboard.md`.");
+  lines.push("");
+  lines.push(renderFrozen(params.frozen));
   lines.push("");
   return lines.join("\n");
 }
@@ -200,6 +217,33 @@ function readPrior(path: string): Map<string, string | null> | null {
   } catch {
     return null;
   }
+}
+
+function renderFrozen(status: FrozenBookStatus): string {
+  const lines: string[] = [];
+  lines.push("## Frozen high-vol book");
+  lines.push("");
+  lines.push(`Strategy \`${status.strategyId}\` version ${status.strategyVersion}, parameter hash \`${status.parameterHash}\`. SOL $${status.solPriceUsd.toFixed(2)}. ${status.qualifying} qualifying pools in the scan. Opened ${status.added.length} new paper positions${status.deferred ? `, ${status.deferred} deferred by the 200-per-run cap` : ""}. Book: ${status.positions} positions, ${status.open} open, ${status.closed} closed.`);
+  lines.push("");
+  lines.push(`Gross PnL versus deposit $${status.grossPnlUsd.toFixed(2)}. Liquidation PnL after exit slippage, transaction fees, and non-refundable bin-array rent $${status.netPnlUsd.toFixed(2)}. Position-account rent is refundable and is not in that cost. This book is separate from the 108-cell forward book.`);
+  lines.push("");
+  if (status.pools.length === 0) {
+    lines.push("No frozen positions yet.");
+    lines.push("");
+    return lines.join("\n");
+  }
+  const shown = [...status.pools].sort((a, b) => a.netPnlUsd - b.netPnlUsd).slice(0, 15);
+  lines.push("| Pool | Status | Gross PnL | Exit slippage | Tx + bin-array rent | Net PnL |");
+  lines.push("| --- | --- | --- | --- | --- | --- |");
+  for (const pool of shown) {
+    lines.push(`| ${pool.name} | ${pool.status} | $${pool.grossPnlUsd.toFixed(2)} | $${pool.exitSlippageUsd.toFixed(2)} | $${pool.txAndRentUsd.toFixed(2)} | $${pool.netPnlUsd.toFixed(2)} |`);
+  }
+  if (status.pools.length > shown.length) {
+    lines.push("");
+    lines.push(`Showing the 15 worst net results of ${status.pools.length}.`);
+  }
+  lines.push("");
+  return lines.join("\n");
 }
 
 function pct(value: number | null): string {

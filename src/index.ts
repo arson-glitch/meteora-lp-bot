@@ -1,4 +1,8 @@
 import { resolve } from "node:path";
+import { discoverTournamentPools } from "./tournament/discover.js";
+import { runHighVolEdge } from "./tournament/edge.js";
+import { FROZEN_STRATEGY_FILE, loadFrozenStrategy } from "./tournament/frozen.js";
+import { solPriceUsd, syncFrozenHighVolBook } from "./tournament/frozenBook.js";
 import { loadConfig, loadEnvFile } from "./config.js";
 import { FileBookStore, emptyPaperBook } from "./executor/book.js";
 import { createLogger } from "./logger.js";
@@ -79,6 +83,40 @@ async function main(): Promise<void> {
     if (result.forward) console.log(summarizeForward(result.forward));
     return;
   }
+  if (cli.command === "high-vol-edge") {
+    const frozen = loadFrozenStrategy(resolve(process.cwd(), FROZEN_STRATEGY_FILE));
+    const price = await solPriceUsd([]);
+    const outPath = resolve(process.cwd(), "reports/high-vol-winner-edge.md");
+    await runHighVolEdge({
+      leaderboardPath: resolve(process.cwd(), "reports/leaderboard.json"),
+      strategy: frozen.strategy,
+      nowMs: Date.now(),
+      sizeUsd: cli.sizeUsd,
+      solPriceUsd: price,
+      outPath,
+      onProgress: (message) => console.log(message),
+    });
+    console.log(`\nEdge report: ${outPath}`);
+    return;
+  }
+  if (cli.command === "frozen-book") {
+    const nowMs = Date.now();
+    console.log("Scanning for high-vol pools");
+    const universe = await discoverTournamentPools(nowMs);
+    const status = await syncFrozenHighVolBook({
+      path: resolve(process.cwd(), "data/frozen-high-vol-forward.json"),
+      frozenPath: resolve(process.cwd(), FROZEN_STRATEGY_FILE),
+      universe,
+      nowMs,
+      sizeUsd: cli.sizeUsd ?? 250,
+      onProgress: (message) => console.log(message),
+    });
+    console.log(`Frozen book: ${status.positions} positions (${status.open} open, ${status.closed} closed).`);
+    console.log(`Gross PnL $${status.grossPnlUsd.toFixed(2)}. Net of costs $${status.netPnlUsd.toFixed(2)}.`);
+    console.log(`Opened ${status.added.length}. Deferred ${status.deferred}. Qualifying ${status.qualifying}.`);
+    console.log(`Hash ${status.parameterHash}.`);
+    return;
+  }
   if (cli.command === "daily") {
     const forwardPath = resolve(process.cwd(), "data/tournament-forward.json");
     const reportsDir = resolve(process.cwd(), "reports");
@@ -88,6 +126,8 @@ async function main(): Promise<void> {
       forwardPath,
       sizeUsd: cli.sizeUsd,
       poolsPerBucket: cli.poolsPerBucket,
+      frozenPath: resolve(process.cwd(), FROZEN_STRATEGY_FILE),
+      frozenBookPath: resolve(process.cwd(), "data/frozen-high-vol-forward.json"),
       onProgress: (message) => console.log(message),
     });
     console.log(`\nDaily summary: ${dailyPath}`);
@@ -181,6 +221,8 @@ function helpText(): string {
     "  tournament       Backtest the strategy grid. Creates the forward book only if it is missing",
     "  tournament-mark  Mark the forward paper book against live pools",
     "  daily            Mark forward positions, open new paper trials, rerun the tournament",
+    "  high-vol-edge    Reprice the frozen high-vol strategy with costs and active-bin fees",
+    "  frozen-book      Open the frozen strategy on newly qualifying high-vol pools",
     "",
     "Flags:",
     "  --fresh                 Replace the paper book before running",
