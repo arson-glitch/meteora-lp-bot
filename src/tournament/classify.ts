@@ -6,7 +6,7 @@ import type { CoinType, DiscoveredPool, PoolToken } from "../types.js";
  *
  * | Bucket | Rule |
  * | --- | --- |
- * | stable | Both symbols are stables (USDC, USDT, USD1, PYUSD, USDS, UXD, USDH, EURC, FDUSD). |
+ * | stable | Both symbols are stables (USDC, USDT, USD1, PYUSD, USDS, UXD, USDH, EURC, FDUSD, USDe, USDG). |
  * | bluechip | Paired with a quote asset, and the other leg is a named major at any age, or has market cap ≥ $1B after the pool is 72h old. |
  * | fresh-memecoin | Pool age under 24h. Named majors are already bluechip, so a new SOL pool is not a fresh memecoin. |
  * | high-vol-trending | Age at least 24h, and either the absolute 24h price change is ≥ 25% or 24h volume / TVL is ≥ 8. |
@@ -154,6 +154,19 @@ export function classifyPool(pool: DiscoveredPool, nowMs: number): Classificatio
     reasons: ["no earlier bucket matched"],
     features,
   };
+}
+
+/**
+ * One trial per market. Stable pairs collapse both directions (USDC-USDT and
+ * USDT-USDC). Every other bucket collapses to the non-quote mint, so three
+ * SOL-USDC bin steps are one SOL sample.
+ */
+export function sampleKey(pool: DiscoveredPool): string {
+  if (isStablePair(pool)) {
+    return [pool.tokenX.address, pool.tokenY.address].sort().join(":");
+  }
+  const asset = assetToken(pool);
+  return asset.address || pool.address;
 }
 
 function assetToken(pool: DiscoveredPool): PoolToken {

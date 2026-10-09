@@ -3,7 +3,7 @@ import { riskTokens } from "../markets.js";
 import { fetchTokenPairs, marketFromPair, pickDexPair } from "../scanner/dexscreener.js";
 import { fetchDlmmPools } from "../scanner/meteora.js";
 import type { CoinType, DiscoveredPool } from "../types.js";
-import { COIN_TYPES, classifyPool } from "./classify.js";
+import { COIN_TYPES, classifyPool, sampleKey } from "./classify.js";
 
 export const MAX_POOLS_PER_BUCKET = 4;
 export const CANDIDATES_PER_BUCKET = 8;
@@ -52,6 +52,24 @@ export async function discoverTournamentPools(nowMs: number): Promise<Discovered
       query: "SOL-USDC",
       listSource: "volume",
     }),
+    fetchDlmmPools({
+      pageSize: 8,
+      sortBy: "volume_24h:desc",
+      query: "PYUSD",
+      listSource: "volume",
+    }),
+    fetchDlmmPools({
+      pageSize: 8,
+      sortBy: "volume_24h:desc",
+      query: "EURC",
+      listSource: "volume",
+    }),
+    fetchDlmmPools({
+      pageSize: 8,
+      sortBy: "volume_24h:desc",
+      query: "USD1",
+      listSource: "volume",
+    }),
   ];
   const settled = await Promise.allSettled(jobs);
   const rows: DiscoveredPool[] = [];
@@ -69,8 +87,12 @@ export async function discoverTournamentPools(nowMs: number): Promise<Discovered
 
 export function assignBuckets(pools: DiscoveredPool[], nowMs: number, perBucket: number): BucketAssignment[] {
   const buckets = new Map<CoinType, DiscoveredPool[]>(COIN_TYPES.map((type) => [type, []]));
+  const seen = new Set<string>();
   const sorted = [...pools].sort((a, b) => (b.volume["24h"] ?? 0) - (a.volume["24h"] ?? 0));
   for (const pool of sorted) {
+    const key = sampleKey(pool);
+    if (seen.has(key)) continue;
+    seen.add(key);
     const type = classifyPool(pool, nowMs).type;
     const list = buckets.get(type);
     if (!list || list.length >= perBucket) continue;

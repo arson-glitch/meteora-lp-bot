@@ -14,7 +14,19 @@ const QUOTE_MINTS = new Set([
 ]);
 
 const QUOTE_SYMBOLS = new Set(["SOL", "WSOL", "USDC", "USDT", "USD1", "PYUSD", "USDS"]);
-const STABLE_SYMBOLS = new Set(["USDC", "USDT", "USD1", "PYUSD", "USDS", "UXD", "USDH", "EURC", "FDUSD"]);
+const STABLE_SYMBOLS = new Set([
+  "USDC",
+  "USDT",
+  "USD1",
+  "PYUSD",
+  "USDS",
+  "UXD",
+  "USDH",
+  "EURC",
+  "FDUSD",
+  "USDE",
+  "USDG",
+]);
 
 export function isQuoteToken(token: Pick<PoolToken, "address" | "symbol">): boolean {
   if (QUOTE_MINTS.has(token.address)) return true;

@@ -5,9 +5,11 @@ import type { TrialResult } from "./backtest.js";
 
 /**
  * Rank on the train window by median net return. The test window only
- * re-ranks the top five train strategies, and a winner is written only when
- * that confirmation sample has at least three trials and a positive median.
- * Test scores are not used to search the other 103 cells.
+ * re-ranks the top five train strategies. A winner is written only when that
+ * confirmation sample has at least three trials and both the median and the
+ * mean net return are positive. A median that is a hair above zero while the
+ * average trial lost money is not promoted. Test scores are not used to
+ * search the other 103 cells.
  */
 
 export const MIN_TRAIN_TRIALS = 3;
@@ -93,8 +95,8 @@ function scoreBucket(
       eligible.length === 0
         ? `No strategy has ${MIN_TRAIN_TRIALS} or more train trials, so nothing is promoted.`
         : `The top train strategies do not have ${MIN_TEST_TRIALS} test trials, so nothing is promoted.`;
-  } else if ((best.test.medianReturn ?? 0) <= 0) {
-    promotionNote = `${best.strategyId} led the test window among the top ${CONFIRM_TOP_K} train strategies, but its test median return is not positive, so it is not promoted.`;
+  } else if ((best.test.medianReturn ?? 0) <= 0 || (best.test.meanReturn ?? 0) <= 0) {
+    promotionNote = `${best.strategyId} led the test window among the top ${CONFIRM_TOP_K} train strategies, but the test median (${fmtPct(best.test.medianReturn)}) and mean (${fmtPct(best.test.meanReturn)}) are not both positive, so it is not promoted.`;
   } else {
     best.promoted = true;
     winner = best;

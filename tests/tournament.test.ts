@@ -9,6 +9,7 @@ import { layoutForStrategy } from "../src/strategy/sides.js";
 import { replayStrategy, splitCandles } from "../src/tournament/backtest.js";
 import type { Candle } from "../src/tournament/candles.js";
 import { classifyPool } from "../src/tournament/classify.js";
+import { assignBuckets } from "../src/tournament/discover.js";
 import { openForwardBook } from "../src/tournament/forward.js";
 import { gridCells, gridStrategies, strategyFromCell } from "../src/tournament/grid.js";
 import { scoreTrials } from "../src/tournament/score.js";
@@ -43,6 +44,53 @@ describe("coin classifier", () => {
 
     const old = memePool({ ageHours: 24 * 30, marketCapUsd: 1_000_000, change: 2, volume24h: 10_000 });
     expect(classifyPool(old, now).type).toBe("older-memecoin");
+
+    const dollars = pool({
+      name: "USDe-USDG",
+      tokenX: token("USDe", "usde-mint", 1),
+      tokenY: token("USDG", "usdg-mint", 1),
+      currentPrice: 1,
+      binStep: 1,
+      createdAtMs: now - 24 * 30 * 3_600_000,
+    });
+    expect(classifyPool(dollars, now).type).toBe("stable");
+  });
+
+  it("keeps one pool per coin when several bin steps share a market", () => {
+    const wide = solPool(24 * 30);
+    wide.address = "sol-usdc-wide";
+    wide.binStep = 10;
+    wide.volume = { "24h": 1_000 };
+    const tight = solPool(24 * 30);
+    tight.address = "sol-usdc-tight";
+    tight.binStep = 1;
+    tight.volume = { "24h": 50_000 };
+    const jup = pool({
+      name: "JUP-SOL",
+      address: "jup-sol",
+      tokenX: token("JUP", "jup-mint", 1, { marketCapUsd: 2_000_000_000 }),
+      tokenY: token("SOL", SOL, 100),
+      currentPrice: 0.01,
+      binStep: 80,
+      tvlUsd: 1_000_000,
+      volume: { "24h": 20_000 },
+      createdAtMs: now - 24 * 30 * 3_600_000,
+    });
+    const bluechip = assignBuckets([wide, tight, jup], now, 4).find((bucket) => bucket.type === "bluechip");
+    expect(bluechip?.pools.map((item) => item.address)).toEqual(["sol-usdc-tight", "jup-sol"]);
+  });
+
+  it("does not put the same coin in two buckets", () => {
+    const hot = memePool({ ageHours: 24 * 10, marketCapUsd: 50_000_000, change: 40, volume24h: 5_000_000, holders: 8_000 });
+    hot.address = "hot-pool";
+    hot.tokenX = { ...hot.tokenX, address: "same-meme" };
+    const calm = memePool({ ageHours: 24 * 30, marketCapUsd: 50_000_000, change: 2, volume24h: 10_000, holders: 5_000 });
+    calm.address = "calm-pool";
+    calm.tokenX = { ...calm.tokenX, address: "same-meme" };
+    const assigned = assignBuckets([hot, calm], now, 4);
+    const names = assigned.flatMap((bucket) => bucket.pools.map((item) => item.address));
+    expect(names).toEqual(["hot-pool"]);
+    expect(assigned.find((bucket) => bucket.type === "established-midcap")?.pools).toHaveLength(0);
   });
 });
 
@@ -263,6 +311,16 @@ describe("tournament scoring", () => {
     ).find((board) => board.coinType === "stable");
     expect(negative?.winner).toBeNull();
     expect(negative?.rows.find((row) => row.strategyId === "neg")?.inConfirmationSet).toBe(true);
+
+    const skewed = scoreTrials(
+      [0, 1, 2].flatMap((index) => [
+        fakeTrial("skew", "train", 0.05),
+        fakeTrial("skew", "test", index === 2 ? -0.5 : 0.2),
+      ]),
+      [],
+    ).find((board) => board.coinType === "stable");
+    expect(skewed?.rows.find((row) => row.strategyId === "skew")?.test.medianReturn ?? 0).toBeGreaterThan(0);
+    expect(skewed?.winner).toBeNull();
   });
 });
 

@@ -118,7 +118,7 @@ Classification is exclusive. The first matching rule wins. Features are pool age
 
 | Bucket | Rule |
 | --- | --- |
-| `stable` | Both symbols are stables (USDC, USDT, USD1, PYUSD, USDS, UXD, USDH, EURC, FDUSD). |
+| `stable` | Both symbols are stables (USDC, USDT, USD1, PYUSD, USDS, UXD, USDH, EURC, FDUSD, USDe, USDG). |
 | `bluechip` | Paired with a quote asset, and the other leg is a named major (SOL, BTC, ETH, JUP, and liquid staking wrappers) at any age, or has market cap at least $1B after the pool is 72 hours old. |
 | `fresh-memecoin` | Pool age under 24 hours. A named major is already bluechip, so a new SOL-USDC pool is not a fresh memecoin. |
 | `high-vol-trending` | Age at least 24 hours, and either the absolute 24h move is at least 25% or 24h volume / TVL is at least 8. |
@@ -152,7 +152,7 @@ Bin step is not a cell. The pool creator sets it. The grid does not search it, a
 
 Older pools use 4-hour Meteora candles over 14 days. Pools younger than 36 hours use 1-hour candles over 48 hours. GeckoTerminal is the fallback when Meteora returns fewer than eight bars. Fee math is the same pro-rata estimate as the paper executor. The leaderboard states the approximations: frozen TVL, OHLC wick path, no gas, no re-entry, and a temporal train/test split on the same pools.
 
-A winner is written only when at least three train trials exist, the strategy is in the top five by train median return, the test replay has at least three trials, and the test median return is positive. Otherwise that bucket keeps the hand-written placeholder.
+A winner is written only when at least three train trials exist, the strategy is in the top five by train median return, the test replay has at least three trials, and both the test median and the test mean return are positive. Otherwise that bucket keeps the hand-written placeholder.
 
 ## Adding a strategy
 

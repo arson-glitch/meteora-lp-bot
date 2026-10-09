@@ -30,7 +30,7 @@ export function renderLeaderboardMarkdown(params: {
   lines.push("## How a winner is chosen");
   lines.push("");
   lines.push(
-    `Strategies are ranked on the first 70% of each pool's candles by median net return (equity minus deposit, divided by deposit). Net return includes simulated LP fees and the inventory mark, so impermanent loss is inside it. A strategy needs at least ${MIN_TRAIN_TRIALS} train trials to be ranked. The top ${CONFIRM_TOP_K} train strategies are re-ranked on the last 30% of candles, which is a separate replay that opens a new position. A config is written to \`strategies/winners/\` only when that test sample has at least ${MIN_TEST_TRIALS} trials and a positive test median. The other cells never see the test window.`,
+    `Strategies are ranked on the first 70% of each pool's candles by median net return (equity minus deposit, divided by deposit). Net return includes simulated LP fees and the inventory mark, so impermanent loss is inside it. A strategy needs at least ${MIN_TRAIN_TRIALS} train trials to be ranked. The top ${CONFIRM_TOP_K} train strategies are re-ranked on the last 30% of candles, which is a separate replay that opens a new position. A config is written to \`strategies/winners/\` only when that test sample has at least ${MIN_TEST_TRIALS} trials and both the test median and the test mean are positive. The other cells never see the test window.`,
   );
   lines.push("");
   lines.push("## Caveats");
@@ -40,7 +40,7 @@ export function renderLeaderboardMarkdown(params: {
   lines.push("- The intra-candle path is open, nearer extreme, other extreme, close. A wick can stop out or exit a range that the close would have survived.");
   lines.push("- Quote-token USD is frozen. Token X is marked at `price × frozen quote USD`. There is no gas, no rebalance rent, and no extra composition fee.");
   lines.push("- After an exit the trial sits in cash. It does not re-enter. Hodl is the initial token amounts marked at the window's last close, so an early exit is compared with holding through the rest of the window.");
-  lines.push("- The train/test split is temporal, on the same pools. It checks whether a rule survived the later part of this sample. It is not a new set of coins. Cross-sectional sample size is the number of pools in the bucket, which this run caps at four.");
+  lines.push("- The train/test split is temporal, on the same pools. It checks whether a rule survived the later part of this sample. It is not a new set of coins. Each bucket keeps at most four pools, and only one pool per coin: stable pairs are deduped by both mints, and every other bucket by the non-quote mint. Two bin steps of SOL-USDC are one trial.");
   lines.push("- `sharpeLike` is mean trial return divided by the sample standard deviation of those trial returns. It is not annualized and it is not a bar-by-bar Sharpe.");
   lines.push("- Bin step is the pool's step. The grid does not vary it, and winners are not split into bin-step bands.");
   lines.push("");
