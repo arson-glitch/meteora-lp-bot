@@ -1,0 +1,37 @@
+{
+  "id": "spot-wide",
+  "name": "Spot-Wide",
+  "description": "Uniform liquidity across 51 bins for pairs that move.",
+  "placeholder": true,
+  "placeholderNote": "Placeholder. About 50 bins is the public Spot-Wide preset. Width and exit thresholds are untuned.",
+  "docs": [
+    "https://docs.meteora.ag/core-products/dlmm/strategies-and-use-cases",
+    "https://docs.meteora.ag/core-products/dlmm/formulas",
+    "https://docs.meteora.ag/core-products/dlmm/what-is-dlmm",
+    "https://docs.meteora.ag/developer-guides/dlmm/typescript-sdk/examples"
+  ],
+  "notes": "Docs: Spot-Wide spreads liquidity across around 50 bins so the position survives more price movement, at the cost of lower fee capture per dollar. Volatile pairs can also use a larger bin step. Live deposits use StrategyType.Spot.",
+  "product": "dlmm",
+  "shape": "Spot",
+  "binsBelow": 25,
+  "binsAbove": 25,
+  "sidedness": "two-sided",
+  "priority": 30,
+  "manualOnly": false,
+  "requires": {
+    "excludeStablePair": true,
+    "minTvlUsd": 8000,
+    "minVolume24hUsd": 15000
+  },
+  "when": [
+    { "minBinStep": 25 },
+    { "minAbsPriceChangeH24Pct": 6 }
+  ],
+  "exit": {
+    "onOutOfRange": "rebalance",
+    "rebalanceEdgeBins": 5,
+    "stopLossPct": 0.12,
+    "takeProfitPct": null,
+    "maxHoldHours": 168
+  }
+}

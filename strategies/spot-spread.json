@@ -1,0 +1,34 @@
+{
+  "id": "spot-spread",
+  "name": "Spot-Spread",
+  "description": "Uniform liquidity across 25 bins. The default when no tighter rule matches.",
+  "placeholder": true,
+  "placeholderNote": "Placeholder. 20-30 bins is the public Spot-Spread preset. This file is the fallback rule and is not course-tuned.",
+  "docs": [
+    "https://docs.meteora.ag/core-products/dlmm/strategies-and-use-cases",
+    "https://docs.meteora.ag/core-products/dlmm/formulas",
+    "https://docs.meteora.ag/core-products/dlmm/dynamic-positions",
+    "https://docs.meteora.ag/developer-guides/dlmm/typescript-sdk/examples"
+  ],
+  "notes": "Docs: Spot-Spread deposits liquidity equally between 20-30 bins for moderate daily movement. It can still go out of range in a strong trend. A position of 70 bins or fewer uses the default position layout. Live deposits use StrategyType.Spot.",
+  "product": "dlmm",
+  "shape": "Spot",
+  "binsBelow": 12,
+  "binsAbove": 12,
+  "sidedness": "two-sided",
+  "priority": 10,
+  "manualOnly": false,
+  "requires": {
+    "minTvlUsd": 5000,
+    "minVolume24hUsd": 10000,
+    "maxBinStep": 400
+  },
+  "when": [],
+  "exit": {
+    "onOutOfRange": "rebalance",
+    "rebalanceEdgeBins": 3,
+    "stopLossPct": 0.08,
+    "takeProfitPct": null,
+    "maxHoldHours": 72
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "id": "dca-out-bidask",
+  "name": "DCA out — ask side",
+  "description": "Single-sided base token above the active bin. Manual only.",
+  "placeholder": true,
+  "placeholderNote": "Placeholder and manual-only. The bot cannot know that you want to exit a token. Pass --strategy dca-out-bidask when you do.",
+  "docs": [
+    "https://docs.meteora.ag/core-products/dlmm/strategies-and-use-cases",
+    "https://docs.meteora.ag/core-products/dlmm/formulas",
+    "https://docs.meteora.ag/developer-guides/dlmm/typescript-sdk/examples"
+  ],
+  "notes": "Docs: to DCA out, deposit the base token single-sided and place liquidity above the current price. As price moves up, base converts into quote. The SDK's single-sided X path deposits token X from the active bin upward and sets singleSidedX. Auto mode skips this file because manualOnly is true.",
+  "product": "dlmm",
+  "shape": "BidAsk",
+  "binsBelow": 0,
+  "binsAbove": 40,
+  "sidedness": "single-sided-x",
+  "priority": 40,
+  "manualOnly": true,
+  "requires": {
+    "excludeStablePair": true,
+    "minTvlUsd": 5000,
+    "minVolume24hUsd": 10000
+  },
+  "when": [],
+  "exit": {
+    "onOutOfRange": "close",
+    "rebalanceEdgeBins": 0,
+    "stopLossPct": 0.2,
+    "takeProfitPct": null,
+    "maxHoldHours": 168
+  }
+}

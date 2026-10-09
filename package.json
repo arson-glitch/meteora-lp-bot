@@ -1,0 +1,32 @@
+{
+  "name": "meteora-lp-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Paper-trading foundation for a Meteora DLMM liquidity-provider bot.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "simulate": "MODE=paper tsx src/index.ts run --fresh --horizon-hours 1",
+    "start": "tsx src/index.ts run",
+    "scan": "tsx src/index.ts scan",
+    "monitor": "tsx src/index.ts monitor",
+    "book": "tsx src/index.ts book",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@meteora-ag/dlmm": "^1.9.14",
+    "@solana/web3.js": "^1.99.0",
+    "bn.js": "^5.2.5",
+    "bs58": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.2.0",
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "id": "spot-concentrated",
+  "name": "Spot-Concentrated",
+  "description": "Uniform liquidity across 3 bins. Meteora's tight preset for pegged pairs.",
+  "placeholder": true,
+  "placeholderNote": "Placeholder. The 1-3 bin width is the public Spot-Concentrated preset, not a course-tuned rule. Replace the numbers before relying on it.",
+  "docs": [
+    "https://docs.meteora.ag/core-products/dlmm/strategies-and-use-cases",
+    "https://docs.meteora.ag/core-products/dlmm/formulas",
+    "https://docs.meteora.ag/core-products/dlmm/dynamic-positions",
+    "https://docs.meteora.ag/developer-guides/dlmm/typescript-sdk/examples"
+  ],
+  "notes": "Docs: liquidity equally deposited between 1-3 bins, for very tight stablecoin or pegged pairs. Highest out-of-range risk. Bin price is P_i = (1 + binStep/10000)^i. Live deposits use StrategyType.Spot.",
+  "product": "dlmm",
+  "shape": "Spot",
+  "binsBelow": 1,
+  "binsAbove": 1,
+  "sidedness": "two-sided",
+  "priority": 90,
+  "manualOnly": false,
+  "requires": {
+    "stablePairOnly": true,
+    "maxBinStep": 5,
+    "minTvlUsd": 50000,
+    "minVolume24hUsd": 20000,
+    "maxAbsPriceChangeH24Pct": 2
+  },
+  "when": [],
+  "exit": {
+    "onOutOfRange": "close",
+    "rebalanceEdgeBins": 1,
+    "stopLossPct": 0.04,
+    "takeProfitPct": null,
+    "maxHoldHours": 24
+  }
+}

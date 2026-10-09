@@ -1,0 +1,39 @@
+{
+  "id": "dca-in-bidask",
+  "name": "DCA in — bid side",
+  "description": "Single-sided quote below the active bin, Bid-Ask weighted toward the far bid.",
+  "placeholder": true,
+  "placeholderNote": "Placeholder. Single-sided quote below price is the public DCA-in example. It is not a signal that you should buy a token.",
+  "docs": [
+    "https://docs.meteora.ag/core-products/dlmm/strategies-and-use-cases",
+    "https://docs.meteora.ag/core-products/dlmm/limit-order",
+    "https://docs.meteora.ag/core-products/dlmm/formulas",
+    "https://docs.meteora.ag/developer-guides/dlmm/typescript-sdk/examples"
+  ],
+  "notes": "Docs: to DCA into a token, deposit the quote single-sided and place liquidity on bins below the current price, using Bid-Ask or selected bins. As price moves down, quote converts into the base token. Bins below the active bin hold one side of the pair. This rule only auto-matches smaller, already-volatile pools.",
+  "product": "dlmm",
+  "shape": "BidAsk",
+  "binsBelow": 40,
+  "binsAbove": 0,
+  "sidedness": "single-sided-y",
+  "priority": 60,
+  "manualOnly": false,
+  "requires": {
+    "excludeStablePair": true,
+    "minTvlUsd": 5000,
+    "maxTvlUsd": 75000,
+    "minVolume24hUsd": 20000,
+    "minBinStep": 50
+  },
+  "when": [
+    { "minAbsPriceChangeH24Pct": 35 },
+    { "maxAgeHours": 36, "minBinStep": 80 }
+  ],
+  "exit": {
+    "onOutOfRange": "close",
+    "rebalanceEdgeBins": 0,
+    "stopLossPct": 0.2,
+    "takeProfitPct": null,
+    "maxHoldHours": 72
+  }
+}
