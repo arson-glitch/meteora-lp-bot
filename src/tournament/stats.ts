@@ -42,6 +42,38 @@ export interface EquityPoint {
  * Sum trial equity curves on a shared clock. A trial counts only between its
  * first and last timestamp. The drawdown is the peak-to-trough drop of that sum.
  */
+/**
+ * Lines trials up on bar index, as if they were funded together. A trial that
+ * has already ended stays at its final equity for the remaining bars.
+ */
+export function alignedAggregateDrawdown(curves: EquityPoint[][]): { maxDrawdownPct: number; peakUsd: number; troughUsd: number } {
+  const series = curves.filter((curve) => curve.length > 0);
+  if (series.length === 0) return { maxDrawdownPct: 0, peakUsd: 0, troughUsd: 0 };
+  const bars = Math.max(...series.map((curve) => curve.length));
+  let peak = 0;
+  let troughAtPeak = 0;
+  let maxDd = 0;
+  for (let index = 0; index < bars; index += 1) {
+    let sum = 0;
+    for (const curve of series) {
+      const point = curve[Math.min(index, curve.length - 1)];
+      sum += point?.equity ?? 0;
+    }
+    if (sum > peak) {
+      peak = sum;
+      troughAtPeak = sum;
+    }
+    if (peak > 0) {
+      const dd = (peak - sum) / peak;
+      if (dd > maxDd) {
+        maxDd = dd;
+        troughAtPeak = sum;
+      }
+    }
+  }
+  return { maxDrawdownPct: maxDd, peakUsd: peak, troughUsd: troughAtPeak };
+}
+
 export function aggregateDrawdown(curves: EquityPoint[][]): { maxDrawdownPct: number; peakUsd: number; troughUsd: number } {
   const series = curves.filter((curve) => curve.length > 0);
   if (series.length === 0) return { maxDrawdownPct: 0, peakUsd: 0, troughUsd: 0 };
@@ -55,12 +87,13 @@ export function aggregateDrawdown(curves: EquityPoint[][]): { maxDrawdownPct: nu
     for (const curve of series) {
       const first = curve[0]?.t ?? 0;
       const last = curve[curve.length - 1]?.t ?? 0;
-      if (t < first || t > last) continue;
+      if (t < first) continue;
       let equity = curve[0]?.equity ?? 0;
       for (const point of curve) {
         if (point.t > t) break;
         equity = point.equity;
       }
+      if (t > last) equity = curve[curve.length - 1]?.equity ?? equity;
       sum += equity;
       included += 1;
     }

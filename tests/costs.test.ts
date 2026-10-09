@@ -11,7 +11,7 @@ import { priceFromBinId } from "../src/math/bins.js";
 import { advancePosition, openPaperPosition } from "../src/executor/paper.js";
 import { loadFrozenStrategy, parameterHash } from "../src/tournament/frozen.js";
 import { appendFrozenPools, emptyFrozenBook } from "../src/tournament/frozenBook.js";
-import { aggregateDrawdown, topCoinShare } from "../src/tournament/stats.js";
+import { aggregateDrawdown, alignedAggregateDrawdown, topCoinShare } from "../src/tournament/stats.js";
 import { resolve } from "node:path";
 import type { StrategyConfig } from "../src/strategy/schema.js";
 import { pool, token } from "./fixtures.js";
@@ -191,6 +191,16 @@ describe("edge stats", () => {
       [{ t: 1, equity: 100 }, { t: 2, equity: 100 }],
     ]);
     expect(drawdown.maxDrawdownPct).toBeCloseTo(0.1, 6);
+    const carried = aggregateDrawdown([
+      [{ t: 1, equity: 100 }, { t: 2, equity: 100 }],
+      [{ t: 2, equity: 100 }, { t: 3, equity: 90 }],
+    ]);
+    expect(carried.maxDrawdownPct).toBeCloseTo(0.05, 6);
+    const aligned = alignedAggregateDrawdown([
+      [{ t: 10, equity: 100 }, { t: 20, equity: 80 }],
+      [{ t: 1, equity: 100 }, { t: 2, equity: 100 }],
+    ]);
+    expect(aligned.maxDrawdownPct).toBeCloseTo(0.1, 6);
     const share = topCoinShare([
       { key: "a", label: "A", netPnlUsd: 50 },
       { key: "b", label: "B", netPnlUsd: 30 },

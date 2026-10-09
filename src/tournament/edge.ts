@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { sleep } from "../http.js";
+import { getJson, sleep } from "../http.js";
 import { assumedLiquidityBins } from "../math/activeBin.js";
 import { COST_MODEL_VERSION, liquidationCost, tokenLegToSol } from "../math/costs.js";
 import { fetchDlmmPool } from "../scanner/meteora.js";
@@ -9,7 +9,7 @@ import type { CoinType, DiscoveredPool } from "../types.js";
 import { replayStrategy, splitCandles, type TerminalState, type TrialResult } from "./backtest.js";
 import { fetchCandleSeries } from "./candles.js";
 import { classifyPool, sampleKey } from "./classify.js";
-import { aggregateDrawdown, distribution, topCoinShare, type CoinProfit, type Distribution } from "./stats.js";
+import { alignedAggregateDrawdown, distribution, topCoinShare, type CoinProfit, type Distribution } from "./stats.js";
 
 const TIKTOK_POOL = "5k7rNmiq9bYbnvNmnGuz53PRVxFwL6Zy377kbPE6fJ5m";
 
@@ -123,6 +123,7 @@ export async function runHighVolEdge(options: {
   }
 
   const tiktok = await describeTikTok(options.nowMs);
+  const jupiter = await jupiterSolImpact();
   const markdown = renderEdge({
     generatedAt: new Date(options.nowMs).toISOString(),
     sizeUsd,
@@ -131,6 +132,7 @@ export async function runHighVolEdge(options: {
     samples: samples.length,
     notes,
     tiktok,
+    jupiter,
     blocks: [
       { title: "TVL share, no costs", trials: grossShare },
       { title: "TVL share, with costs", trials: netShare },
@@ -196,6 +198,22 @@ function costForTerminal(terminal: TerminalState, pool: DiscoveredPool, solPrice
   });
 }
 
+async function jupiterSolImpact(): Promise<string> {
+  try {
+    const quote = await getJson<{ priceImpactPct?: string; outAmount?: string }>(
+      "https://lite-api.jup.ag/swap/v1/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=1000000000&slippageBps=50",
+    );
+    const impact = Number(quote.priceImpactPct);
+    const out = Number(quote.outAmount) / 1e6;
+    if (!Number.isFinite(impact) || !Number.isFinite(out)) return "A live Jupiter quote was unavailable.";
+    const impactPct = Math.abs(impact) * 100;
+    const impactText = impactPct < 0.0001 ? "under 0.0001%" : `${impactPct.toFixed(4)}%`;
+    return `A live Jupiter quote of 1 SOL to USDC returned about $${out.toFixed(2)} with price impact ${impactText}, which is why the stablecoin-to-SOL hop uses a deep-book estimate instead of meme-pool depth.`;
+  } catch {
+    return "A live Jupiter quote was unavailable, so the stablecoin hop stays on the depth model.";
+  }
+}
+
 async function describeTikTok(nowMs: number): Promise<string> {
   const pool = await fetchDlmmPool(TIKTOK_POOL);
   if (!pool) return `TikTok-SOL (${TIKTOK_POOL}) could not be fetched. In the forward book it was opened as fresh-memecoin.`;
@@ -217,6 +235,7 @@ function renderEdge(params: {
   samples: number;
   notes: string[];
   tiktok: string;
+  jupiter: string;
   blocks: Array<{ title: string; trials: PricedTrial[] }>;
 }): string {
   const lines: string[] = [];
@@ -234,11 +253,11 @@ function renderEdge(params: {
   lines.push("");
   lines.push("## Costs");
   lines.push("");
-  lines.push("Exit sells the non-SOL token inventory, including unclaimed fees, back to SOL by walking pool bins. Depth is the same uniform TVL split. The pool's current base plus dynamic fee is charged on the input. A non-SOL quote is then sold to SOL against a $10M reserve at 4 bps. Position rent (0.05740608 SOL per account) is refundable on close and is not in the PnL cost. Bin arrays other than the active bin's array cost 0.07143744 SOL each and are not refunded, because the close does not call closeBinArray. Open and close each pay a 5,000-lamport base fee plus a priority fee (0.00004 SOL open, 0.00003 SOL close). Jupiter quotes are live only, so they are not applied to these historical exits.");
+  lines.push(`Exit sells the non-SOL token inventory, including unclaimed fees, back to SOL by walking pool bins. Depth is the same uniform TVL split. The pool's current base plus dynamic fee is charged on the input. A non-SOL quote is then sold to SOL against a $10M reserve at 4 bps. Position rent (0.05740608 SOL per account) is refundable on close and is not in the PnL cost. Bin arrays other than the active bin's array cost 0.07143744 SOL each and are not refunded, because the close does not call closeBinArray. Open and close each pay a 5,000-lamport base fee plus a priority fee (0.00004 SOL open, 0.00003 SOL close). Jupiter quotes are live only, so they are not applied to these historical exits. ${params.jupiter}`);
   lines.push("");
   lines.push("## Edge");
   lines.push("");
-  lines.push("Dollars are the mean per trial on a $" + params.sizeUsd.toFixed(0) + " deposit. Versus hold compares terminal equity with holding the entry tokens to the end of the window. Costs are subtracted from the LP result only.");
+  lines.push("Dollars are the mean per trial on a $" + params.sizeUsd.toFixed(0) + " deposit. Versus hold compares terminal equity with holding the entry tokens. This strategy deposits only the quote asset, and quote USD is frozen, so holding that entry is flat in USD and versus-hold matches the strategy PnL. Costs are subtracted from the LP result only.");
   lines.push("");
   lines.push("| Measurement | Split | n | Median return | Mean return | Mean PnL | Mean vs hold |");
   lines.push("| --- | --- | --- | --- | --- | --- | --- |");
@@ -251,7 +270,7 @@ function renderEdge(params: {
   lines.push("");
   lines.push("## Distribution");
   lines.push("");
-  lines.push("Returns are per trial. Drawdown per trial is the peak-to-trough of that trial's equity. The aggregate drawdown sums every trial in the split on a shared clock and measures that portfolio curve. Train and time-split overlap the same coins on different windows, so they are not one portfolio.");
+  lines.push("Returns are per trial. Drawdown per trial is the peak-to-trough of that trial's equity. The aggregate drawdown lines every trial in the split up at bar 0, as if they were funded together, and keeps a finished trial at its final equity. Train and time-split are separate windows on the same coins, so they are not one portfolio.");
   lines.push("");
   for (const block of [params.blocks[0], params.blocks[3]]) {
     if (!block) continue;
@@ -265,7 +284,7 @@ function renderEdge(params: {
       const dds = rows.map((row) => row.trial.maxDrawdownPct);
       const dist = distribution(returns);
       const dd = distribution(dds);
-      const agg = aggregateDrawdown(rows.map((row) => row.trial.equityCurve ?? []));
+      const agg = alignedAggregateDrawdown(rows.map((row) => row.trial.equityCurve ?? []));
       lines.push(`| ${split === "test" ? "time-split" : split} | ${dist.n} | ${pct(dist.mean)} | ${pct(dist.median)} | ${pct(dist.p5)} | ${pct(dd.mean)} | ${pct(dd.max)} | ${pct(agg.maxDrawdownPct)} |`);
     }
     lines.push("");
