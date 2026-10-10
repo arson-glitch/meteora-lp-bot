@@ -22,6 +22,7 @@ import {
 } from "./forward.js";
 import { FROZEN_STRATEGY_FILE } from "./frozen.js";
 import { syncFrozenHighVolBook, type FrozenBookStatus } from "./frozenBook.js";
+import { defaultDashboardPaths, writeDashboard } from "./dashboard.js";
 import { H12_TRIAL_BOOK, H12_TRIAL_FILE, renderH12Trial, syncH12TrialBook, type H12TrialStatus } from "./h12trial.js";
 import { gridStrategies } from "./grid.js";
 import { forwardStrategySnapshot, type ForwardStrategySnapshot, type LeaderStudy } from "./leaderStudy.js";
@@ -41,6 +42,7 @@ export interface DailyOptions {
   h12FrozenPath?: string;
   h12BookPath?: string;
   h12CacheDir?: string;
+  recorderDb?: string;
   rug?: RugCheckOptions;
   onProgress?: (message: string) => void;
 }
@@ -155,6 +157,14 @@ export async function runDaily(options: DailyOptions): Promise<string> {
       h12,
     }),
   );
+  const dash = await writeDashboard({
+    ...defaultDashboardPaths(options.reportsDir, options.recorderDb, nowMs),
+    h12BookPath: options.h12BookPath ?? join(process.cwd(), H12_TRIAL_BOOK),
+    frozenBookPath: options.frozenBookPath ?? options.forwardPath.replace(/tournament-forward\.json$/, "frozen-high-vol-forward.json"),
+    forwardPath: options.forwardPath,
+    pools: universe,
+  });
+  log(`Dashboard ${dash}`);
   return path;
 }
 

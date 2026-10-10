@@ -121,6 +121,8 @@ npm run daily
 
 `npm run validate-fees -- --db /path/to/recorder.sqlite` compares the box recorder's swap fees and per-bin snapshots with the crossed-bin and active-bin models and writes which one is closer.
 
+`npm run dashboard` writes `reports/dashboard/index.html`, one offline file with the numbers embedded. It has no server and no network requests. `npm run daily` regenerates it. Pass `--db` to include recorder swaps, snapshots, drops, and credits.
+
 The promoted high-vol cell is frozen in `strategies/frozen/high-vol-2026-10-09.json`. `loadFrozenStrategy` rejects the file if the parameter hash does not match. Its paper book is `data/frozen-high-vol-forward.json`, separate from the 108-cell book. `npm run high-vol-edge` reprices that cell on the leaderboard's high-vol pools with and without exit costs, and with TVL fee share versus active-bin fee share.
 
 Each bucket targets 18 coins. A second pool is added when the same coin has another bin step, and a third when the bucket has fewer than 15 coins. About 30% of coin keys are a holdout: those coins are replayed on their full history and never used to rank strategies. Older pools use daily Meteora bars over up to 90 days. Younger pools stay on 4-hour or 1-hour bars because the API rejects longer intraday windows.

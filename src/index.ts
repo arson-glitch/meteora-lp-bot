@@ -14,6 +14,7 @@ import { runDaily } from "./tournament/daily.js";
 import { markForwardBook, summarizeForward } from "./tournament/forward.js";
 import { runBrief3 } from "./tournament/brief3.js";
 import { runH12Stress } from "./tournament/h12stress.js";
+import { defaultDashboardPaths, writeDashboard } from "./tournament/dashboard.js";
 import { validateFeesFile } from "./tournament/validateFees.js";
 import { runTournament } from "./tournament/run.js";
 import type { PaperBook } from "./types.js";
@@ -132,6 +133,7 @@ async function main(): Promise<void> {
       poolsPerBucket: cli.poolsPerBucket,
       frozenPath: resolve(process.cwd(), FROZEN_STRATEGY_FILE),
       frozenBookPath: resolve(process.cwd(), "data/frozen-high-vol-forward.json"),
+      recorderDb: cli.db,
       rug: {
         failScore: config.rugFailScore,
         minHolders: config.rugMinHolders,
@@ -141,6 +143,11 @@ async function main(): Promise<void> {
       onProgress: (message) => console.log(message),
     });
     console.log(`\nDaily summary: ${dailyPath}`);
+    return;
+  }
+  if (cli.command === "dashboard") {
+    const file = await writeDashboard(defaultDashboardPaths(resolve(process.cwd(), "reports"), cli.db));
+    console.log(file);
     return;
   }
   if (cli.command === "validate-fees") {
@@ -263,6 +270,7 @@ function helpText(): string {
     "  daily            Mark forward positions, open new paper trials, rerun the tournament",
     "  h12-stress       Walk-forward stress test of the adaptive-width rule",
     "  validate-fees    Compare recorder swaps and bin snapshots with the fee models",
+    "  dashboard        Write the offline paper dashboard",
     "  high-vol-edge    Reprice the frozen high-vol strategy with costs and active-bin fees",
     "  frozen-book      Open the frozen strategy on newly qualifying high-vol pools",
     "",
@@ -279,7 +287,7 @@ function helpText(): string {
     "  --pools-per-bucket <n>  Pools replayed per coin type (default 4)",
     "  --size-usd <n>          Simulated deposit per trial (default 250)",
     "  --skip-forward          Skip the forward paper book",
-    "  --db <path>             Recorder sqlite for validate-fees",
+    "  --db <path>             Recorder sqlite for validate-fees and the dashboard",
     "  --verbose",
     "",
     "Paper mode is the default. No wallet is required.",
