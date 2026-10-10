@@ -59,7 +59,7 @@ When the active bin moves, bins it has crossed convert fully (X becomes Y at tha
 
 ## Setup
 
-Requires Node 20+.
+Requires Node 22+. The recorder stores events with the built-in `node:sqlite` module, which ships with Node 22.
 
 ```bash
 npm install
@@ -171,9 +171,15 @@ Enhanced `transactionSubscribe` is not on the Helius free plan. `parsedTransacti
 
 Current Swap2 emits with Anchor `emit_cpi!`. The event is not a `Program data:` log line. It is the inner instruction: 8-byte Anchor CPI discriminator, then the event. The recorder reads signatures from the socket and loads each transaction with `getTransaction` (`maxSupportedTransactionVersion: 1`), then decodes that instruction with the SDK IDL. `Program data:` logs are still decoded when a pool emits them, and those do not cost an extra RPC call.
 
-Free-plan limits used here: 1,000,000 credits per month, 10 RPC requests per second, 5 WebSocket connections, 1,000 subscriptions per connection. The process caps itself at 8 RPC requests per second and 32,000 estimated credits per UTC day. It reserves the credits for the remaining 15-minute snapshots before it fetches more swaps, and it closes the socket once that swap budget is gone so websocket bytes do not eat the snapshot reserve. A credit line is written at each hour change and a heartbeat every five minutes. The queue holds at most 400 signatures; overflow is counted as dropped.
+Free-plan limits used here: 1,000,000 credits per month, 10 RPC requests per second, 5 WebSocket connections, 1,000 subscriptions per connection. The process caps itself at 4 RPC requests per second and 32,000 estimated credits per UTC day. Helius free returned constant HTTP 429s at 8 requests per second, so 4 is the default. `--rps 8` is still under the documented 10/s ceiling. The process reserves the credits for the remaining 15-minute snapshots before it fetches more swaps, and it closes the socket once that swap budget is gone so websocket bytes do not eat the snapshot reserve. A credit line is written at each hour change. It includes `projected_month` (month-to-date credits divided by the UTC day of the month, times 30) and `projected_from_hour` (that hour's total times 24 times 30). A heartbeat every five minutes repeats both projections for the open hour. The queue holds at most 400 signatures; overflow is counted as dropped.
 
-Steady-state snapshots are about two RPC calls per pool (`refetchStates` plus `getBinsAroundActiveBin`), 80 bins each side of the active bin, every 15 minutes. For 150 pools that is about 28,800 credits per day. The other ~3,200 credits are swap fetches, about 3,200 transactions per day across the whole set, plus a small websocket bill (2 credits per 0.1 MB). A full tape of every swap on 150 active pools does not fit in the free 1M credits. The cap is what keeps a free key from running out mid-month. The first snapshot pass also pays for `DLMM.create`.
+Websocket logs are billed at 2 credits per 0.1 MB. The live set used about 30 MB in the first hour, about 600 credits per hour. Left on every pool, that socket alone is about 432,000 credits per month, before snapshots. Two flags cut it. Snapshots still run for every pool in `pools.json`. Restart the process to pick them up; a running recorder keeps the subscriptions it opened.
+
+`--ws-buckets stable,bluechip` opens `logsSubscribe` only for those coin types. Names are `stable`, `bluechip`, `fresh-memecoin`, `high-vol-trending`, `established-midcap`, and `older-memecoin`. Omit the flag, or pass `all`, to stream every tracked pool. Unknown names are logged and skipped.
+
+`--ws-drop-noisiest 5` ranks pools by notification bytes and, at each UTC hour, unsubscribes that many loudest pools. Dropped pools stay off the socket until the next start. They still get snapshots. The flag does nothing with `--ws program`, which is one subscription.
+
+Steady-state snapshots are about two RPC calls per pool (`refetchStates` plus `getBinsAroundActiveBin`), 80 bins each side of the active bin, every 15 minutes. For 150 pools that is about 28,800 credits per day. Swap fetches and the websocket bill sit on top of that. A full tape of every swap on 150 active pools does not fit in the free 1M credits. The cap is what keeps a free key from running out mid-month. The first snapshot pass also pays for `DLMM.create`. Run the recorder on Node 22 or newer.
 
 Disk, under `data/recorder/recorder.sqlite`: a swap row is a few hundred bytes, a liquidity row is similar, and a snapshot keeps only bins with a non-zero balance. A public-RPC sample of SOL-USDC plus one other pool stored 186 swaps and 9 liquidity events in 164KB. At a few dozen swaps per pool per hour across 150 pools, expect roughly 30–80 MB per day. A busy set can reach about 200 MB per day. SQLite WAL can briefly use a similar amount again.
 
@@ -184,6 +190,8 @@ nohup npm run record >> logs/recorder.log 2>&1 &
 kill "$(cat data/recorder/recorder.pid)"
 
 npm run record -- --refresh-pools
+npm run record -- --ws-buckets stable,bluechip,established-midcap
+npm run record -- --ws-drop-noisiest 5
 npm run record:export
 npm run record -- --smoke --seconds 360
 ```

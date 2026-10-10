@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DLMM_PROGRAM_ID } from "../src/constants.js";
-import { creditsFromRpcBody, projectedMonthCredits, reservedSnapshotCredits, wsCredits } from "../src/recorder/budget.js";
+import { creditsFromRpcBody, DEFAULT_RPC_RPS, projectedMonthCredits, reservedSnapshotCredits, wsCredits } from "../src/recorder/budget.js";
 import { ANCHOR_EVENT_CPI, decodeDlmmEvents, decodeEventBytes, selectTracked } from "../src/recorder/decode.js";
 import { eventsFromTransaction } from "../src/recorder/txEvents.js";
 import { exportRecorder } from "../src/recorder/export.js";
@@ -12,6 +12,7 @@ import { formatHour } from "../src/recorder/meter.js";
 import { humanPrice, swapsToCandles } from "../src/recorder/prices.js";
 import type { TrackedPool } from "../src/recorder/pools.js";
 import { redact } from "../src/recorder/redact.js";
+import { noisiestAddresses, parseWsBuckets, poolsForWebsocket } from "../src/recorder/wsFilter.js";
 import { packBins } from "../src/recorder/snapshot.js";
 import { liquidityRow, openStore, swapRow } from "../src/recorder/store.js";
 
@@ -74,6 +75,10 @@ describe("recorder decode", () => {
     expect(swap.feeToken).toBe("x");
     expect(selectTracked(events, new Set([POOL]))).toHaveLength(1);
     expect(selectTracked(events, new Set(["other"]))).toHaveLength(0);
+  });
+
+  it("skips a Program success log that empties Anchor's stack", () => {
+    expect(decodeDlmmEvents(["Program 11111111111111111111111111111111 success"])).toEqual([]);
   });
 
   it("keeps the LP slice of a legacy Swap and decodes add liquidity", () => {
@@ -250,10 +255,32 @@ describe("credit hour line", () => {
       rpcCredits: 4,
       wsMessages: 2,
       wsBytes: 100_000,
-    }, 10, 32_000);
+    }, 10, 32_000, Date.UTC(2026, 9, 10, 13));
     expect(line).toContain("rpc_credits=4");
     expect(line).toContain("ws_credits=2.00");
     expect(line).toContain("daily_cap=32000");
+    expect(line).toContain("projected_month=30");
+    expect(line).toContain("projected_from_hour=4320");
+    expect(DEFAULT_RPC_RPS).toBe(4);
+  });
+});
+
+describe("websocket volume", () => {
+  it("keeps only named buckets and ranks the loudest pools", () => {
+    const parsed = parseWsBuckets("stable, no-such, bluechip");
+    expect(parsed.unknown).toEqual(["no-such"]);
+    expect(parseWsBuckets(undefined).buckets).toBeNull();
+    expect(parseWsBuckets("all").buckets).toBeNull();
+    const stable = samplePool();
+    const meme = { ...samplePool(), address: TRADER, name: "MEME-SOL", coinType: "fresh-memecoin" as const };
+    const streamed = poolsForWebsocket([stable, meme], parsed);
+    expect(streamed.map((pool) => pool.address)).toEqual([POOL]);
+    const loud = noisiestAddresses([
+      [POOL, 100],
+      [TRADER, 5_000],
+      ["quiet", 0],
+    ], 1);
+    expect(loud).toEqual([{ address: TRADER, bytes: 5_000 }]);
   });
 });
 

@@ -1,6 +1,6 @@
 import { Connection } from "@solana/web3.js";
 import { sleep } from "../http.js";
-import { creditsFromRpcBody, DEFAULT_RPC_RPS, hourStartMs, wsCredits } from "./budget.js";
+import { creditsFromRpcBody, DEFAULT_RPC_RPS, hourStartMs, projectedFromHourCredits, projectedMonthCredits, wsCredits } from "./budget.js";
 import { redact } from "./redact.js";
 import { dayCredits, type CreditHour, type RecorderStore } from "./store.js";
 
@@ -67,7 +67,7 @@ export class CreditMeter {
     if (hour === this.current.hourStart) return null;
     const closed = { ...this.current };
     this.store.saveHour(closed);
-    this.log(formatHour(closed, this.store.creditsSince(monthStart(nowMs)), this.dailyCap));
+    this.log(formatHour(closed, this.store.creditsSince(monthStart(nowMs)), this.dailyCap, nowMs));
     const saved = this.store.getHour(hour);
     this.current = saved ?? { hourStart: hour, rpcCalls: 0, rpcCredits: 0, wsMessages: 0, wsBytes: 0 };
     this.lastLoggedHour = hour;
@@ -79,12 +79,19 @@ export class CreditMeter {
     const month = this.store.creditsSince(monthStart(nowMs));
     return `credits today=${this.usedToday(nowMs).toFixed(1)} month=${month.toFixed(1)} cap=${this.dailyCap} hour_ws_bytes=${this.current.wsBytes} hour_rpc=${this.current.rpcCredits}`;
   }
+
+  /** RPC plus websocket credits accumulated in the open UTC hour. */
+  openHourTotal(): number {
+    return this.current.rpcCredits + wsCredits(this.current.wsBytes);
+  }
 }
 
-export function formatHour(hour: CreditHour, monthCredits: number, dailyCap: number): string {
+export function formatHour(hour: CreditHour, monthCredits: number, dailyCap: number, nowMs: number): string {
   const ws = wsCredits(hour.wsBytes);
   const total = hour.rpcCredits + ws;
-  return `credits hour=${new Date(hour.hourStart).toISOString()} rpc_calls=${hour.rpcCalls} rpc_credits=${hour.rpcCredits} ws_messages=${hour.wsMessages} ws_bytes=${hour.wsBytes} ws_credits=${ws.toFixed(2)} hour_total=${total.toFixed(2)} month_to_date=${monthCredits.toFixed(1)} daily_cap=${dailyCap}`;
+  const projectedMonth = projectedMonthCredits(monthCredits, nowMs);
+  const projectedHour = projectedFromHourCredits(total);
+  return `credits hour=${new Date(hour.hourStart).toISOString()} rpc_calls=${hour.rpcCalls} rpc_credits=${hour.rpcCredits} ws_messages=${hour.wsMessages} ws_bytes=${hour.wsBytes} ws_credits=${ws.toFixed(2)} hour_total=${total.toFixed(2)} month_to_date=${monthCredits.toFixed(1)} projected_month=${projectedMonth.toFixed(0)} projected_from_hour=${projectedHour.toFixed(0)} daily_cap=${dailyCap}`;
 }
 
 function monthStart(nowMs: number): number {

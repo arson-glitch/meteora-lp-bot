@@ -8,6 +8,8 @@ import {
   DEFAULT_RPC_RPS,
   HELIUS_FREE_MONTHLY_CREDITS,
   HELIUS_FREE_RPC_RPS,
+  hourStartMs,
+  projectedFromHourCredits,
   projectedMonthCredits,
   reservedSnapshotCredits,
 } from "./budget.js";
@@ -19,6 +21,7 @@ import { snapshotPool, type SnapshotClient } from "./snapshot.js";
 import { openStore, liquidityRow, swapRow } from "./store.js";
 import { LogSubscriber, type WsMode } from "./subscribe.js";
 import { eventsFromTransaction } from "./txEvents.js";
+import { parseWsBuckets, poolsForWebsocket, WS_BUCKETS } from "./wsFilter.js";
 
 export interface RecordOptions {
   dir: string;
@@ -32,6 +35,10 @@ export interface RecordOptions {
   binsEachSide: number;
   dailyCap: number;
   wsMode: WsMode;
+  /** Comma-separated coin types. Omit or `all` to stream every pool. */
+  wsBuckets: string | undefined;
+  /** Each UTC hour, unsubscribe this many loudest pools. 0 keeps every subscription. */
+  wsDropNoisiest: number;
   backfillPerPool: number;
   backfillMaxAgeMs: number;
   secret: string | undefined;
@@ -65,7 +72,21 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
   if (pools.length === 0) throw new Error("no DLMM pools to record");
   store.upsertPools(pools);
   const tracked = new Set(pools.map((pool) => pool.address));
+  const bucketFilter = parseWsBuckets(options.wsBuckets);
+  if (bucketFilter.unknown.length > 0) {
+    log(`websocket ignored unknown buckets: ${bucketFilter.unknown.join(", ")} (known: ${WS_BUCKETS.join(", ")})`);
+  }
+  const wsPools = options.wsMode === "program" ? pools : poolsForWebsocket(pools, bucketFilter);
+  const droppedWs = new Set<string>();
   log(`tracking ${pools.length} pools`);
+  if (bucketFilter.buckets) {
+    log(`websocket buckets=${[...bucketFilter.buckets].join(",")} streaming=${wsPools.length}; snapshots stay on all ${pools.length} pools`);
+  }
+  if (options.wsDropNoisiest > 0 && options.wsMode === "program") {
+    log("--ws-drop-noisiest applies to per-pool subscriptions; program mode is one subscription");
+  } else if (options.wsDropNoisiest > 0) {
+    log(`websocket drops the ${options.wsDropNoisiest} noisiest pools at each UTC hour; snapshots stay on all ${pools.length} pools`);
+  }
   const meter = new CreditMeter(store, options.dailyCap, log);
   const limiter = limiterForRps(options.rps);
   const connection = meteredConnection(endpoint.http, limiter, meter, options.secret);
@@ -129,7 +150,7 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
   const subscriber = new LogSubscriber({
     url: endpoint.ws,
     mode: options.wsMode,
-    addresses: pools.map((pool) => pool.address),
+    addresses: wsPools.map((pool) => pool.address),
     programId: DLMM_PROGRAM_ID,
     meter,
     secret: options.secret,
@@ -205,6 +226,30 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
   })();
   void drain;
 
+  const nameOf = (address: string) => pools.find((pool) => pool.address === address)?.name ?? address;
+  let rankedHour = hourStartMs(Date.now());
+  const onHour = () => {
+    const hour = hourStartMs(Date.now());
+    if (hour === rankedHour) return;
+    rankedHour = hour;
+    if (options.wsDropNoisiest <= 0 || options.wsMode !== "mentions") {
+      subscriber.resetHourBytes();
+      return;
+    }
+    const loud = subscriber.noisiest(options.wsDropNoisiest);
+    if (loud.length === 0) {
+      subscriber.resetHourBytes();
+      return;
+    }
+    for (const item of loud) droppedWs.add(item.address);
+    const keep = wsPools.filter((pool) => !droppedWs.has(pool.address)).map((pool) => pool.address);
+    subscriber.setAddresses(keep);
+    subscriber.resetHourBytes();
+    subscriber.resubscribe();
+    const listed = loud.map((item) => `${nameOf(item.address)} ${item.bytes}B`).join(", ");
+    log(`websocket dropped noisiest ${listed}; streaming ${keep.length} of ${pools.length}`);
+  };
+
   subscriber.start();
   const cache = new Map<string, SnapshotClient>();
   await snapshotRound(pools, connection, store, cache, options, meter, () => lastSlot, () => stopping, log);
@@ -216,6 +261,7 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
     while (Date.now() < deadline && !stopping) {
       await sleep(5_000);
       meter.roll(Date.now());
+      onHour();
     }
     stopping = true;
     await drained;
@@ -232,10 +278,12 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
     await sleep(slice);
     if (stopping) break;
     meter.roll(Date.now());
+    onHour();
     if (Date.now() >= nextHeartbeat) {
       const counts = store.counts();
-      const month = store.creditsSince(monthStart(Date.now()));
-      log(`heartbeat swaps=${counts.swaps} liquidity=${counts.liquidity} snapshots=${counts.snapshots} queue=${queue.length} dropped=${dropped} ${meter.snapshotLine()} projected_month=${projectedMonthCredits(month, Date.now()).toFixed(0)}`);
+      const now = Date.now();
+      const month = store.creditsSince(monthStart(now));
+      log(`heartbeat swaps=${counts.swaps} liquidity=${counts.liquidity} snapshots=${counts.snapshots} queue=${queue.length} dropped=${dropped} ${meter.snapshotLine()} projected_month=${projectedMonthCredits(month, now).toFixed(0)} projected_from_hour=${projectedFromHourCredits(meter.openHourTotal()).toFixed(0)}`);
       nextHeartbeat = Date.now() + 5 * 60_000;
     }
     if (due(store, options.snapshotMinutes)) {
@@ -318,6 +366,8 @@ export function defaultRecordOptions(overrides: Partial<RecordOptions> = {}): Re
     binsEachSide: 80,
     dailyCap: DEFAULT_DAILY_CREDIT_CAP,
     wsMode: "mentions",
+    wsBuckets: undefined,
+    wsDropNoisiest: 0,
     backfillPerPool: 15,
     backfillMaxAgeMs: 6 * 60 * 60 * 1000,
     secret: process.env.HELIUS_API_KEY?.trim() || undefined,

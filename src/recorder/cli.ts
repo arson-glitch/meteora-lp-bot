@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { DEFAULT_RPC_RPS } from "./budget.js";
 import { exportRecorder } from "./export.js";
 import { defaultRecordOptions, runRecord, type RecordOptions } from "./run.js";
 import type { WsMode } from "./subscribe.js";
@@ -28,11 +29,13 @@ async function main(): Promise<void> {
     smokeSeconds: flagNumber(flags, "seconds") ?? 360,
     smokePools: flagNumber(flags, "smoke-pools") ?? 2,
     poolLimit: flagNumber(flags, "pools") ?? 160,
-    rps: flagNumber(flags, "rps") ?? 8,
+    rps: flagNumber(flags, "rps") ?? DEFAULT_RPC_RPS,
     snapshotMinutes: flagNumber(flags, "snapshot-minutes") ?? 15,
     binsEachSide: flagNumber(flags, "bins") ?? 80,
     dailyCap: flagNumber(flags, "daily-credit-cap") ?? 32_000,
     wsMode: flagString(flags, "ws") === "program" ? "program" : "mentions" satisfies WsMode,
+    wsBuckets: flagString(flags, "ws-buckets"),
+    wsDropNoisiest: flagNumber(flags, "ws-drop-noisiest") ?? 0,
     backfillPerPool: flagNumber(flags, "backfill") ?? 15,
   });
   const counts = await runRecord(options);
@@ -80,11 +83,13 @@ function help(): string {
     "  --smoke                  Two busy pools, one snapshot, then exit",
     "  --seconds <n>            Smoke listen time (default 360)",
     "  --pools <n>              Max tracked pools (default 160)",
-    "  --rps <n>                RPC cap, kept under the free 10/s (default 8)",
+    "  --rps <n>                RPC cap, kept under the free 10/s (default 4)",
     "  --snapshot-minutes <n>   Bin snapshot interval (default 15)",
     "  --bins <n>               Bins each side of the active bin (default 80)",
     "  --daily-credit-cap <n>   Stop RPC and the socket at this estimate (default 32000)",
     "  --ws mentions|program    Per-pool logsSubscribe, or the whole DLMM program",
+    "  --ws-buckets <list>      Coin types for the socket only (default all). Snapshots stay on every pool",
+    "  --ws-drop-noisiest <n>   Each UTC hour, unsubscribe the n loudest pools (default 0)",
     "  --dir <path>             Data directory",
     "  --out <path>             Export directory",
   ].join("\n");

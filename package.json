@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Paper-trading foundation for a Meteora DLMM liquidity-provider bot.",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "simulate": "MODE=paper tsx src/index.ts run --fresh --horizon-hours 1",

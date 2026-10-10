@@ -100,13 +100,21 @@ export function decodeDlmmEvents(logs: string[]): DecodedEvent[] {
   if (logs.length === 0) return [];
   const out: DecodedEvent[] = [];
   let index = 0;
-  for (const event of eventParser().parseLogs(logs)) {
-    if (!event || !KEPT.has(event.name)) continue;
-    const decoded = normalize(event, index);
-    if (decoded) {
-      out.push(decoded);
-      index += 1;
+  try {
+    for (const event of eventParser().parseLogs(logs)) {
+      if (!event || !KEPT.has(event.name)) continue;
+      const decoded = normalize(event, index);
+      if (decoded) {
+        out.push(decoded);
+        index += 1;
+      }
     }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // A "Program … success" line with an empty execution stack throws inside
+    // Anchor's EventParser. Skip that notification; other failures still throw.
+    if (message.includes("Expected the stack to have elements")) return out;
+    throw error;
   }
   return out;
 }

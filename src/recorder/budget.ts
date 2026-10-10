@@ -10,8 +10,15 @@ export const HELIUS_FREE_SUBSCRIPTIONS_PER_CONNECTION = 1_000;
  */
 export const WS_BYTES_PER_CREDIT = 50_000;
 
-/** Stay under the free 10 req/s limit. */
-export const DEFAULT_RPC_RPS = 8;
+/**
+ * Stay under the free 10 req/s limit.
+ * 8 req/s still drew constant HTTP 429s on the Helius free tier, so the default is 4.
+ * `--rps 8` is accepted; a value at or above 10 falls back to this default.
+ */
+export const DEFAULT_RPC_RPS = 4;
+
+/** Hours used to turn one hour's credit total into a 30-day run rate. */
+export const HOURS_PER_MONTH = 24 * 30;
 
 /**
  * 150 pools × 96 snapshots × ~2 RPC calls is about 28,800 credits/day.
@@ -73,4 +80,9 @@ export function projectedMonthCredits(monthToDate: number, nowMs: number): numbe
   const day = new Date(nowMs).getUTCDate();
   const elapsed = Math.max(1, day);
   return (monthToDate / elapsed) * 30;
+}
+
+/** This hour's credits, repeated for every hour of a 30-day month. */
+export function projectedFromHourCredits(hourTotal: number): number {
+  return hourTotal * HOURS_PER_MONTH;
 }

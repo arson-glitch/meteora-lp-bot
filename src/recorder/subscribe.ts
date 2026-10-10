@@ -1,5 +1,6 @@
 import { redact } from "./redact.js";
 import type { CreditMeter } from "./meter.js";
+import { noisiestAddresses } from "./wsFilter.js";
 
 export type WsMode = "mentions" | "program";
 
@@ -20,6 +21,11 @@ export class LogSubscriber {
   private stopped = false;
   private nextId = 1;
   private opened = false;
+  private recycling = false;
+  private addresses: string[];
+  private readonly requestAddress = new Map<number, string>();
+  private readonly subscriptionAddress = new Map<number, string>();
+  private readonly bytesByAddress = new Map<string, number>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly params: {
@@ -32,7 +38,44 @@ export class LogSubscriber {
     log: (line: string) => void;
     shouldStream?: () => boolean;
     onLogs: (logs: string[], signature: string, slot: number) => void;
-  }) {}
+  }) {
+    this.addresses = params.addresses;
+  }
+
+  /** Replace the per-pool subscription list. Call `resubscribe` to apply it. */
+  setAddresses(addresses: string[]): void {
+    this.addresses = addresses;
+  }
+
+  /** Pools that produced the most notification bytes since the last hour reset. */
+  noisiest(n: number): Array<{ address: string; bytes: number }> {
+    return noisiestAddresses(this.bytesByAddress, n);
+  }
+
+  resetHourBytes(): void {
+    this.bytesByAddress.clear();
+  }
+
+  /**
+   * Close the socket without stopping the process so the close handler
+   * reconnects and sends logsSubscribe for the current address list.
+   * Program mode is a single subscription, so this is a no-op there.
+   */
+  resubscribe(): void {
+    if (this.stopped || this.params.mode === "program") return;
+    this.backoffMs = 1_000;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      this.recycling = true;
+      this.ws.close();
+      return;
+    }
+    this.recycling = false;
+    this.connect();
+  }
 
   start(): void {
     this.stopped = false;
@@ -70,6 +113,8 @@ export class LogSubscriber {
     ws.addEventListener("open", () => {
       this.opened = true;
       this.backoffMs = 1_000;
+      this.requestAddress.clear();
+      this.subscriptionAddress.clear();
       this.params.log(`websocket connected mode=${this.params.mode} subscriptions=${this.targets().length}`);
       void this.subscribeAll();
     });
@@ -85,7 +130,15 @@ export class LogSubscriber {
     });
     ws.addEventListener("close", () => {
       this.opened = false;
+      if (this.ws === ws) this.ws = null;
       if (this.stopped) return;
+      if (this.recycling) {
+        this.recycling = false;
+        this.backoffMs = 1_000;
+        this.params.log(`websocket resubscribing subscriptions=${this.targets().length}`);
+        this.schedule(0);
+        return;
+      }
       this.params.log(`websocket closed; reconnecting in ${this.backoffMs}ms`);
       this.schedule(this.backoffMs);
       this.backoffMs = Math.min(this.backoffMs * 2, 60_000);
@@ -103,7 +156,7 @@ export class LogSubscriber {
 
   private targets(): SubscribeTarget[] {
     if (this.params.mode === "program") return [{ id: 1, address: this.params.programId }];
-    return this.params.addresses.map((address, index) => ({ id: index + 1, address }));
+    return this.addresses.map((address, index) => ({ id: index + 1, address }));
   }
 
   private async subscribeAll(): Promise<void> {
@@ -115,6 +168,7 @@ export class LogSubscriber {
         method: "logsSubscribe",
         params: [{ mentions: [target.address] }, { commitment: "confirmed" }],
       };
+      this.requestAddress.set(target.id, target.address);
       this.ws?.send(JSON.stringify(payload));
       this.nextId = target.id + 1;
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -123,8 +177,13 @@ export class LogSubscriber {
 
   private handle(text: string): void {
     let message: {
+      id?: number;
+      result?: unknown;
       method?: string;
-      params?: { result?: { context?: { slot?: number }; value?: { signature?: string; err?: unknown; logs?: string[] } } };
+      params?: {
+        subscription?: number;
+        result?: { context?: { slot?: number }; value?: { signature?: string; err?: unknown; logs?: string[] } };
+      };
       error?: { message?: string };
     };
     try {
@@ -132,11 +191,20 @@ export class LogSubscriber {
     } catch {
       return;
     }
+    if (typeof message.id === "number" && typeof message.result === "number") {
+      const address = this.requestAddress.get(message.id);
+      if (address) this.subscriptionAddress.set(message.result, address);
+    }
     if (message.error?.message) {
       this.params.log(`websocket rpc error: ${redact(message.error.message, this.params.secret)}`);
       return;
     }
     if (message.method !== "logsNotification") return;
+    const subscription = message.params?.subscription;
+    if (typeof subscription === "number") {
+      const address = this.subscriptionAddress.get(subscription);
+      if (address) this.bytesByAddress.set(address, (this.bytesByAddress.get(address) ?? 0) + Buffer.byteLength(text));
+    }
     const value = message.params?.result?.value;
     const slot = message.params?.result?.context?.slot ?? 0;
     if (!value?.signature || !value.logs || value.err) return;
