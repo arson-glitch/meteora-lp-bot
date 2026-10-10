@@ -128,6 +128,12 @@ async function main(): Promise<void> {
       poolsPerBucket: cli.poolsPerBucket,
       frozenPath: resolve(process.cwd(), FROZEN_STRATEGY_FILE),
       frozenBookPath: resolve(process.cwd(), "data/frozen-high-vol-forward.json"),
+      rug: {
+        failScore: config.rugFailScore,
+        minHolders: config.rugMinHolders,
+        minTvlUsd: config.limits.minTvlUsd,
+        failClosed: config.rugFailClosed,
+      },
       onProgress: (message) => console.log(message),
     });
     console.log(`\nDaily summary: ${dailyPath}`);

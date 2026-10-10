@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { CoinType } from "../types.js";
+import { displayPnlUsd } from "../executor/pnl.js";
+import type { RugCheckOptions } from "../rugcheck/checker.js";
+import type { CoinType, DiscoveredPool, PaperPosition } from "../types.js";
 import { COIN_TYPES } from "./classify.js";
 import { sampleKey } from "./classify.js";
 import {
@@ -21,6 +23,8 @@ import {
 import { FROZEN_STRATEGY_FILE } from "./frozen.js";
 import { syncFrozenHighVolBook, type FrozenBookStatus } from "./frozenBook.js";
 import { gridStrategies } from "./grid.js";
+import { forwardStrategySnapshot, type ForwardStrategySnapshot, type LeaderStudy } from "./leaderStudy.js";
+import { rugGatePools, type RugHit } from "./rugGate.js";
 import type { BucketLeaderboard } from "./score.js";
 import { runTournament } from "./run.js";
 
@@ -33,6 +37,7 @@ export interface DailyOptions {
   poolsPerBucket?: number;
   frozenPath?: string;
   frozenBookPath?: string;
+  rug?: RugCheckOptions;
   onProgress?: (message: string) => void;
 }
 
@@ -72,9 +77,12 @@ export async function runDaily(options: DailyOptions): Promise<string> {
   await enrichPriceChange(primary);
   const buckets = selectTournamentBuckets(universe, nowMs, coinTarget);
   const book = loadForwardBookIfPresent(options.forwardPath, nowMs, sizeUsd);
+  const rugHits: RugHit[] = [];
+  const noFresh: CoinType[] = [];
+  const openBuckets = options.rug ? await gateNewBuckets(buckets, book, universe, options.rug, rugHits, noFresh, log) : buckets;
   const appended = appendForwardPools({
     book,
-    buckets,
+    buckets: openBuckets,
     strategies: gridStrategies(),
     sizeUsd,
     nowMs,
@@ -89,6 +97,7 @@ export async function runDaily(options: DailyOptions): Promise<string> {
     universe,
     nowMs,
     sizeUsd,
+    rug: options.rug,
     onProgress: log,
   });
 
@@ -120,9 +129,50 @@ export async function runDaily(options: DailyOptions): Promise<string> {
       prior,
       trials: result.trials,
       frozen,
+      leaders: result.leaders,
+      solPriceUsd: result.solPriceUsd,
+      positions: appended.book.positions,
+      pools: universe,
+      openedAt: new Date(nowMs).toISOString(),
+      rugs: rugHits,
+      noFresh,
     }),
   );
   return path;
+}
+
+async function gateNewBuckets(
+  buckets: ReturnType<typeof selectTournamentBuckets>,
+  book: ReturnType<typeof loadForwardBookIfPresent>,
+  universe: DiscoveredPool[],
+  rug: RugCheckOptions,
+  hits: RugHit[],
+  noFresh: CoinType[],
+  log: (message: string) => void,
+): Promise<ReturnType<typeof selectTournamentBuckets>> {
+  const addresses = new Set(book.pools.map((pool) => pool.address));
+  const keys = new Set(book.pools.map((pool) => pool.sampleKey).filter((key): key is string => Boolean(key)));
+  for (const meta of book.pools) {
+    if (meta.sampleKey) continue;
+    const match = universe.find((pool) => pool.address === meta.address);
+    if (!match) continue;
+    meta.sampleKey = sampleKey(match);
+    keys.add(meta.sampleKey);
+  }
+  const gated = [];
+  for (const bucket of buckets) {
+    const candidates = bucket.pools.filter((pool) => !addresses.has(pool.address) && !keys.has(sampleKey(pool)));
+    if (candidates.length === 0) {
+      noFresh.push(bucket.type);
+      gated.push({ type: bucket.type, pools: [] });
+      continue;
+    }
+    log(`Rug-checking new ${bucket.type} pools`);
+    const result = await rugGatePools({ pools: candidates, coinType: bucket.type, options: rug, accept: 1 });
+    hits.push(...result.hits);
+    gated.push({ type: bucket.type, pools: result.passed });
+  }
+  return gated;
 }
 
 function renderDaily(params: {
@@ -135,11 +185,18 @@ function renderDaily(params: {
   prior: Map<string, string | null> | null;
   trials: number;
   frozen: FrozenBookStatus;
+  leaders: LeaderStudy[];
+  solPriceUsd: number;
+  positions: PaperPosition[];
+  pools: DiscoveredPool[];
+  openedAt: string;
+  rugs: RugHit[];
+  noFresh: CoinType[];
 }): string {
   const lines: string[] = [];
   lines.push(`# Paper daily ${params.generatedAt.slice(0, 10)}`);
   lines.push("");
-  lines.push(`Generated ${params.generatedAt}. Deposit size $${params.sizeUsd}. ${params.trials} backtest trials. No live transactions.`);
+  lines.push(`Generated ${params.generatedAt}. Deposit size $${params.sizeUsd}. SOL $${params.solPriceUsd.toFixed(2)}. ${params.trials} backtest trials. Paper only: no wallet, no signed transaction.`);
   lines.push("");
   lines.push("## Forward book");
   lines.push("");
@@ -160,6 +217,10 @@ function renderDaily(params: {
   }
   lines.push("");
   lines.push(`New forward trials: ${params.added.length ? params.added.join("; ") : "none"}. Book size after opens: ${params.forwardPositions} positions.`);
+  if (params.noFresh.length > 0) {
+    lines.push("");
+    lines.push(`No unseen pool remained in the scan for: ${params.noFresh.join(", ")}.`);
+  }
   lines.push("");
   lines.push("## Leaderboard changes");
   lines.push("");
@@ -175,6 +236,10 @@ function renderDaily(params: {
     );
   }
   lines.push("");
+  lines.push("### Promoted and demoted");
+  lines.push("");
+  for (const line of promotionMoves(params.prior, params.boards)) lines.push(`- ${line}`);
+  lines.push("");
   lines.push("## Versus holding");
   lines.push("");
   lines.push("Dollars versus buying the entry tokens and holding them to the end of the window. A negative number means the LP result lagged that hold. This is the backtest, not the forward book.");
@@ -183,7 +248,7 @@ function renderDaily(params: {
   lines.push("| --- | --- | --- | --- | --- |");
   for (const type of COIN_TYPES) {
     const board = params.boards.find((item) => item.coinType === type);
-    const row = board?.winner ?? board?.rows.find((item) => item.train.n > 0);
+    const row = board?.winner ?? board?.rows.find((item) => item.trainRank === 1);
     if (!row) {
       lines.push(`| ${type} | — | — | — | — |`);
       continue;
@@ -197,9 +262,164 @@ function renderDaily(params: {
   lines.push("");
   for (const board of params.boards) lines.push(`- ${board.coinType}: ${board.promotionNote}`);
   lines.push("");
-  lines.push("Fee share in the leaderboard is still candle LP fees times position value over frozen TVL. The frozen high-vol book below uses active-bin fee share and subtracts exit slippage, transaction fees, and non-refundable bin-array rent. Daily bars, when used, treat the day's high and low as a path. Holdout coins never enter the ranking. Full rows are in `reports/leaderboard.md`.");
+  lines.push("The ranking above still uses candle LP fees times position value over frozen TVL, with no exit slippage and no rent. The next section replays only the leading cell and subtracts those costs. It is still the TVL-share fee model. Yesterday's active-bin pass on the frozen high-vol cell took the edge away, so a positive TVL-share number is not a per-bin result. The frozen high-vol book later in this file marks with active-bin fees.");
   lines.push("");
+  lines.push(renderLeaders(params));
+  lines.push(renderLosses(params.positions, params.openedAt, params.marked));
+  lines.push(renderRugs("New challenger pools", params.rugs));
   lines.push(renderFrozen(params.frozen));
+  lines.push(renderRugs("Frozen high-vol opens", params.frozen.rugs));
+  lines.push("");
+  return lines.join("\n");
+}
+
+function promotionMoves(prior: Map<string, string | null> | null, boards: BucketLeaderboard[]): string[] {
+  const lines: string[] = [];
+  for (const type of COIN_TYPES) {
+    const previous = prior?.get(type) ?? null;
+    const now = boards.find((board) => board.coinType === type)?.winner?.strategyId ?? null;
+    if (previous && previous !== now) {
+      lines.push(now ? `${type}: demoted \`${previous}\`, promoted \`${now}\`.` : `${type}: demoted \`${previous}\`. Nothing is promoted.`);
+    } else if (!previous && now) {
+      lines.push(`${type}: promoted \`${now}\`.`);
+    } else if (previous && previous === now) {
+      lines.push(`${type}: \`${now}\` stays promoted.`);
+    } else {
+      lines.push(`${type}: still not promoted.`);
+    }
+  }
+  return lines;
+}
+
+function renderLeaders(params: {
+  sizeUsd: number;
+  leaders: LeaderStudy[];
+  positions: PaperPosition[];
+  pools: DiscoveredPool[];
+  openedAt: string;
+  solPriceUsd: number;
+}): string {
+  const lines: string[] = [];
+  const poolMap = new Map(params.pools.map((pool) => [pool.address, pool]));
+  lines.push("## Leading cell, after costs");
+  lines.push("");
+  lines.push(`Each figure is a $${params.sizeUsd} paper deposit. Gross is inventory mark plus claimed fees, before costs. Net subtracts exit-swap slippage, signature and priority fees, and non-refundable bin-array rent. Position-account rent is refundable on close and is not in the loss. Impermanent loss is the inventory mark versus holding the tokens the position started with. Versus cash is the net PnL. Versus the token is equity after costs minus buying the volatile asset at the window's first open and holding it to the last close. That token hold is defined only when token X is volatile and token Y is a quote. If both legs are quotes, or the volatile asset is Y, the token hold is the deposit and is not a real token bet.`);
+  lines.push("");
+  lines.push("Drawdown mean, 5th percentile, and max are the distribution of each trial's own max drawdown, not a combined portfolio path. Forward rows use positions opened before this run. Their 5th percentile and worst figure are returns, not path drawdowns. New opens from today are left out so a zero mark does not dilute the book.");
+  lines.push("");
+  for (const type of COIN_TYPES) {
+    const study = params.leaders.find((item) => item.coinType === type);
+    lines.push(`### ${type}`);
+    lines.push("");
+    if (!study) {
+      lines.push("No leading cell. The bucket did not produce a scored strategy.");
+      lines.push("");
+      continue;
+    }
+    lines.push(`\`${study.strategyId}\` ${study.promoted ? "is promoted" : "leads training and is not promoted"}. ${study.sentence}.`);
+    lines.push("");
+    lines.push("| Window | Trials | Coins | Mean gross | Median net | Mean net | Mean IL | Mean slippage | Mean tx + rent | Beat cash | Beat token | Mean vs token |");
+    lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+    for (const split of ["train", "test", "holdout"] as const) {
+      const label = split === "test" ? "time-split" : split;
+      const gross = study.gross[split];
+      const net = study.net[split];
+      lines.push(
+        `| ${label} | ${net.n} | ${net.coins} | ${usd(gross.meanPnlUsd)} | ${usd(net.medianPnlUsd)} | ${usd(net.meanPnlUsd)} | ${usd(net.meanIlUsd)} | ${usd(net.meanSlippageUsd)} | ${usd(net.meanTxRentUsd)} | ${net.beatCash}/${net.n} | ${net.beatToken}/${net.n} | ${usd(net.meanVsTokenUsd)} |`,
+      );
+    }
+    lines.push("");
+    for (const split of ["train", "test", "holdout"] as const) {
+      const label = split === "test" ? "time-split" : split;
+      const net = study.net[split];
+      lines.push(
+        `${label} drawdown: mean ${pct(net.drawdown.mean)}, 5th percentile ${pct(net.drawdown.p5)}, max ${pct(net.drawdown.max)}. Return 5th percentile ${pct(net.returns.p5)}. Top coins by net: ${net.topCoinText}. Share of net ${share(net.shareOfNet)}, share of positive PnL ${share(net.shareOfPositive)}. Volatile-token trials ${net.volatileTokenTrials}/${net.n}.`,
+      );
+    }
+    lines.push("");
+    const forward = forwardStrategySnapshot({
+      positions: params.positions,
+      strategyId: study.strategyId,
+      pools: poolMap,
+      solPriceUsd: params.solPriceUsd,
+      openedAt: params.openedAt,
+    });
+    lines.push(renderForward(forward));
+    if (study.net.test.volatileTokenTrials === 0 && study.net.holdout.volatileTokenTrials === 0) {
+      lines.push("");
+      lines.push("Out-of-sample token-hold comparisons are flat because the volatile leg is not token X against a quote, or both legs are quotes. Beating the token then means the same thing as beating cash.");
+    }
+    if (study.caution) {
+      lines.push("");
+      lines.push(study.caution);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+function renderForward(forward: ForwardStrategySnapshot): string {
+  if (forward.n === 0) return "Forward paper: no earlier positions use this cell.";
+  return `Forward paper: ${forward.n} positions (${forward.open} open, ${forward.closed} closed). Gross ${usd(forward.grossPnlUsd)}, net ${usd(forward.netPnlUsd)}, slippage ${usd(forward.slippageUsd)}, tx + rent ${usd(forward.txRentUsd)}. Versus cash ${usd(forward.vsCashUsd)} (${forward.beatCash}/${forward.n} ahead of cash). Versus the token ${usd(forward.vsTokenUsd)} (${forward.beatToken}/${forward.n} ahead of the token). Mean net return ${pct(forward.meanReturn)}, 5th percentile ${pct(forward.p5Return)}, worst ${pct(forward.worstReturn)}.`;
+}
+
+function renderLosses(positions: PaperPosition[], openedAt: string, marked: ForwardStatus | null): string {
+  const lines: string[] = [];
+  lines.push("## Large paper losses");
+  lines.push("");
+  const pools = (marked?.pools ?? []).filter((pool) => pool.pnlUsd < -100).sort((a, b) => a.pnlUsd - b.pnlUsd);
+  if (pools.length === 0) lines.push("No forward pool is more than $100 under its deposit in aggregate.");
+  else {
+    lines.push("Pools whose open and closed positions together are more than $100 under the deposit:");
+    lines.push("");
+    for (const pool of pools) lines.push(`- ${pool.coinType} ${pool.name}: $${pool.pnlUsd.toFixed(2)} (${pool.closeReasons || "still open"})`);
+  }
+  const singles = positions
+    .filter((position) => position.openedAt !== openedAt)
+    .map((position) => ({ position, pnl: displayPnlUsd(position) }))
+    .filter((row) => row.pnl < -100)
+    .sort((a, b) => a.pnl - b.pnl)
+    .slice(0, 15);
+  lines.push("");
+  if (singles.length === 0) lines.push("No single older position is more than $100 under its deposit.");
+  else {
+    lines.push("Worst single positions under −$100, excluding today's new opens:");
+    lines.push("");
+    for (const row of singles) {
+      lines.push(`- ${row.position.poolName} \`${row.position.strategyId}\` ${row.position.status}: $${row.pnl.toFixed(2)}${row.position.closeReason ? ` (${row.position.closeReason})` : ""}`);
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+function renderRugs(title: string, hits: RugHit[]): string {
+  const lines: string[] = [];
+  lines.push(`## Rug checker: ${title}`);
+  lines.push("");
+  if (hits.length === 0) {
+    lines.push("No pool was sent through the rug checker in this pass.");
+    lines.push("");
+    return lines.join("\n");
+  }
+  const failed = hits.filter((hit) => !hit.ok);
+  const passed = hits.filter((hit) => hit.ok);
+  const api = failed.filter((hit) => hit.reasons.length > 0 && hit.reasons.every((reason) => reason.includes("RugCheck request failed")));
+  const rejected = failed.filter((hit) => !api.includes(hit));
+  lines.push(`Checked ${hits.length}. Passed ${passed.length}. Rejected ${rejected.length}. RugCheck request failed ${api.length}.`);
+  lines.push("");
+  if (passed.length > 0) lines.push(`Passed: ${passed.map((hit) => `${hit.coinType} ${hit.name}`).join("; ")}.`);
+  if (rejected.length === 0 && api.length === 0) {
+    lines.push("");
+    return lines.join("\n");
+  }
+  lines.push("");
+  lines.push("| Pool | Bucket | Kind | Reasons |");
+  lines.push("| --- | --- | --- | --- |");
+  for (const hit of [...rejected, ...api]) {
+    const kind = api.includes(hit) ? "api-failure" : "rejected";
+    lines.push(`| ${hit.name} | ${hit.coinType} | ${kind} | ${hit.reasons.join("; ")} |`);
+  }
   lines.push("");
   return lines.join("\n");
 }
@@ -253,5 +473,11 @@ function pct(value: number | null): string {
 
 function usd(value: number | null): string {
   if (value === null || Number.isNaN(value)) return "—";
-  return `$${value.toFixed(2)}`;
+  const sign = value < 0 ? "-" : "";
+  return `${sign}$${Math.abs(value).toFixed(2)}`;
+}
+
+function share(value: number | null): string {
+  if (value === null || Number.isNaN(value)) return "—";
+  return `${(value * 100).toFixed(0)}%`;
 }

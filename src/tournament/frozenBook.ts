@@ -8,9 +8,11 @@ import { ageHours, riskTokens } from "../markets.js";
 import { fetchDlmmPool } from "../scanner/meteora.js";
 import type { StrategyConfig } from "../strategy/schema.js";
 import type { DiscoveredPool, PaperPosition } from "../types.js";
+import type { RugCheckOptions } from "../rugcheck/checker.js";
 import { classifyPool } from "./classify.js";
 import { enrichPriceChange } from "./discover.js";
 import { loadFrozenStrategy, type FrozenStrategyFile } from "./frozen.js";
+import { rugGatePools, type RugHit } from "./rugGate.js";
 
 export const FROZEN_BOOK_KIND = "frozen-high-vol";
 export const FROZEN_OPEN_CAP = 200;
@@ -60,6 +62,7 @@ export interface FrozenBookStatus {
   grossPnlUsd: number;
   netPnlUsd: number;
   pools: FrozenPoolRow[];
+  rugs: RugHit[];
 }
 
 export function emptyFrozenBook(frozen: FrozenStrategyFile, nowMs: number, sizeUsd: number, solPriceUsd: number): FrozenForwardBook {
@@ -192,7 +195,7 @@ export async function markFrozenBook(book: FrozenForwardBook, nowMs: number): Pr
   return book;
 }
 
-export function frozenBookStatus(book: FrozenForwardBook, pools: Map<string, DiscoveredPool>, added: string[], deferred: number, qualifying: number): FrozenBookStatus {
+export function frozenBookStatus(book: FrozenForwardBook, pools: Map<string, DiscoveredPool>, added: string[], deferred: number, qualifying: number, rugs: RugHit[] = []): FrozenBookStatus {
   const rows = book.slots.map((slot) => rowForSlot(slot, pools.get(slot.position.poolAddress) ?? null, book.solPriceUsd));
   return {
     strategyId: book.strategyId,
@@ -208,6 +211,7 @@ export function frozenBookStatus(book: FrozenForwardBook, pools: Map<string, Dis
     grossPnlUsd: rows.reduce((sum, row) => sum + row.grossPnlUsd, 0),
     netPnlUsd: rows.reduce((sum, row) => sum + row.netPnlUsd, 0),
     pools: rows,
+    rugs,
   };
 }
 
@@ -268,6 +272,7 @@ export async function syncFrozenHighVolBook(options: {
   universe: DiscoveredPool[];
   nowMs: number;
   sizeUsd: number;
+  rug?: RugCheckOptions;
   onProgress?: (message: string) => void;
 }): Promise<FrozenBookStatus> {
   const frozen = loadFrozenStrategy(options.frozenPath);
@@ -282,9 +287,24 @@ export async function syncFrozenHighVolBook(options: {
     await markFrozenBook(book, options.nowMs);
   }
   const qualifying = await qualifyingHighVolPools(options.universe, options.nowMs, options.onProgress);
+  const have = new Set(book.slots.map((slot) => slot.position.poolAddress));
+  const fresh = qualifying.filter((pool) => !have.has(pool.address));
+  let opening = fresh;
+  let rugs: RugHit[] = [];
+  if (options.rug) {
+    options.onProgress?.(`Rug-checking ${fresh.length} new high-vol pools`);
+    const gated = await rugGatePools({
+      pools: fresh,
+      coinType: "high-vol-trending",
+      options: options.rug,
+      accept: FROZEN_OPEN_CAP,
+    });
+    opening = gated.passed;
+    rugs = gated.hits;
+  }
   const appended = appendFrozenPools({
     book,
-    pools: qualifying,
+    pools: opening,
     strategy: frozen.strategy,
     sizeUsd: options.sizeUsd,
     nowMs: options.nowMs,
@@ -292,7 +312,7 @@ export async function syncFrozenHighVolBook(options: {
   saveFrozenBook(options.path, appended.book);
   const byAddress = new Map(options.universe.map((pool) => [pool.address, pool]));
   options.onProgress?.(`Frozen high-vol book: opened ${appended.added.length}, deferred ${appended.deferred}`);
-  return frozenBookStatus(appended.book, byAddress, appended.added, appended.deferred, qualifying.length);
+  return frozenBookStatus(appended.book, byAddress, appended.added, appended.deferred, qualifying.length, rugs);
 }
 
 function poolStandIn(position: PaperPosition): DiscoveredPool {
