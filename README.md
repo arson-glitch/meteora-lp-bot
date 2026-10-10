@@ -163,6 +163,35 @@ Older pools use daily Meteora candles over 90 days when that series covers at le
 
 Ranking uses train coins and the first 70% of their candles. The top five yield strategies are re-ranked on the last 30%. A winner has to beat cash and beat holding the token on the holdout, with at least four holdout trials, and no single coin above 50% of positive holdout PnL. Otherwise that bucket is not promoted.
 
+## Forward recorder
+
+`npm run record` is a separate read-only process. It does not import the live executor, does not sign, and does not send transactions. `MODE=live` is ignored. The Helius key is read from `HELIUS_API_KEY` in the environment and is never written to the log, the database, or the repo.
+
+Enhanced `transactionSubscribe` is not on the Helius free plan. `parsedTransactionSubscribe` is, at 1 credit per delivered transaction. The recorder uses standard `logsSubscribe`, billed at 2 credits per 0.1 MB. The default is one subscription per tracked pool (`--ws mentions`). `--ws program` mentions the DLMM program. A public-RPC sample of that firehose was about 260 transactions per second, including transactions that only mention the program inside an aggregator, so program-wide streaming does not fit the free credit budget.
+
+Current Swap2 emits with Anchor `emit_cpi!`. The event is not a `Program data:` log line. It is the inner instruction: 8-byte Anchor CPI discriminator, then the event. The recorder reads signatures from the socket and loads each transaction with `getTransaction` (`maxSupportedTransactionVersion: 1`), then decodes that instruction with the SDK IDL. `Program data:` logs are still decoded when a pool emits them, and those do not cost an extra RPC call.
+
+Free-plan limits used here: 1,000,000 credits per month, 10 RPC requests per second, 5 WebSocket connections, 1,000 subscriptions per connection. The process caps itself at 8 RPC requests per second and 32,000 estimated credits per UTC day. It reserves the credits for the remaining 15-minute snapshots before it fetches more swaps, and it closes the socket once that swap budget is gone so websocket bytes do not eat the snapshot reserve. A credit line is written at each hour change and a heartbeat every five minutes. The queue holds at most 400 signatures; overflow is counted as dropped.
+
+Steady-state snapshots are about two RPC calls per pool (`refetchStates` plus `getBinsAroundActiveBin`), 80 bins each side of the active bin, every 15 minutes. For 150 pools that is about 28,800 credits per day. The other ~3,200 credits are swap fetches, about 3,200 transactions per day across the whole set, plus a small websocket bill (2 credits per 0.1 MB). A full tape of every swap on 150 active pools does not fit in the free 1M credits. The cap is what keeps a free key from running out mid-month. The first snapshot pass also pays for `DLMM.create`.
+
+Disk, under `data/recorder/recorder.sqlite`: a swap row is a few hundred bytes, a liquidity row is similar, and a snapshot keeps only bins with a non-zero balance. A public-RPC sample of SOL-USDC plus one other pool stored 186 swaps and 9 liquidity events in 164KB. At a few dozen swaps per pool per hour across 150 pools, expect roughly 30–80 MB per day. A busy set can reach about 200 MB per day. SQLite WAL can briefly use a similar amount again.
+
+```bash
+mkdir -p logs
+nohup npm run record >> logs/recorder.log 2>&1 &
+# the process writes data/recorder/recorder.pid
+kill "$(cat data/recorder/recorder.pid)"
+
+npm run record -- --refresh-pools
+npm run record:export
+npm run record -- --smoke --seconds 360
+```
+
+`record:export` writes `data/recorder/export/<pool>.series.json` for `replayStrategy` (`series.candles`, one-hour bars, LP fees in USD at the token prices frozen when the pool was listed) plus `.swaps.jsonl`, `.liquidity.jsonl`, and `.snapshots.jsonl`. Swap JSONL has the trader, start and end bin, amounts, fees, slot, and time. Receive time is used for live events; backfill after a short restart uses the transaction's block time. Resume dedupes by signature. Backfill is capped at 15 signatures per pool and skipped when the last event is older than six hours, so a long outage does not spend the day's credits catching up.
+
+The pool list is the tournament universe (about 150 DLMM pools) saved at `data/recorder/pools.json`. Later starts reuse that file. `--refresh-pools` rebuilds it.
+
 ## Adding a strategy
 
 Strategies are data. The loader reads every `strategies/*.json` file.

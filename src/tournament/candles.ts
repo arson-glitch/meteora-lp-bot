@@ -34,8 +34,8 @@ export interface CandleSeries {
   poolAddress: string;
   timeframe: CandleTimeframe;
   candleHours: number;
-  source: "meteora" | "geckoterminal";
-  feeSource: "volume-history" | "fee-rate" | "mixed";
+  source: "meteora" | "geckoterminal" | "recorder";
+  feeSource: "volume-history" | "fee-rate" | "mixed" | "swap-events";
   candles: Candle[];
 }
 
