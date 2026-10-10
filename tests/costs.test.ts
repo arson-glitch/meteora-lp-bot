@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { activeBinFeeUsd, assumedLiquidityBins } from "../src/math/activeBin.js";
+import { activeBinFeeUsd, assumedLiquidityBins, crossedBinFeeUsd } from "../src/math/activeBin.js";
 import {
   binArrayIndex,
+  clipRangeToBinArray,
+  compositionFeeAmount,
   liquidationCost,
   sellXForY,
   sunkBinArrayCount,
@@ -20,6 +22,38 @@ const SOL = "So11111111111111111111111111111111111111112";
 const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
 describe("execution costs", () => {
+  it("clips a range to the active bin array", () => {
+    expect(clipRangeToBinArray(0, 30, 30)).toEqual({ binsBelow: 0, binsAbove: 30 });
+    expect(clipRangeToBinArray(69, 10, 10)).toEqual({ binsBelow: 10, binsAbove: 0 });
+    expect(sunkBinArrayCount(0, 30, 0)).toBe(0);
+    expect(sunkBinArrayCount(-30, 30, 0)).toBeGreaterThan(0);
+  });
+
+  it("charges a composition fee only when the deposit swaps Y into X", () => {
+    expect(compositionFeeAmount({ feeRate: 0.01, inAmountX: 0, outAmountX: 0, inAmountY: 10, outAmountY: 10 })).toBe(0);
+    const fee = compositionFeeAmount({ feeRate: 0.01, inAmountX: 1, outAmountX: 5, inAmountY: 100, outAmountY: 40 });
+    expect(fee).toBeCloseTo(60 * 0.01 * 1.01, 8);
+  });
+
+  it("pays a crossed swap more than the destination bin alone", () => {
+    const bins = [
+      { binId: 0, price: 1, side: "bid" as const, weight: 1, amountX: 0, amountY: 200 },
+      { binId: 1, price: 1, side: "ask" as const, weight: 1, amountX: 10, amountY: 0 },
+    ];
+    const shared = {
+      poolLpFeesPerHour: 100,
+      hours: 1,
+      poolTvlUsd: 1_000,
+      liquidityBins: 10,
+      bins,
+      priceXUsd: 1,
+      priceYUsd: 1,
+    };
+    const one = crossedBinFeeUsd({ ...shared, fromBinId: 1, toBinId: 1 });
+    const both = crossedBinFeeUsd({ ...shared, fromBinId: 0, toBinId: 1 });
+    expect(both).toBeGreaterThan(one);
+  });
+
   it("matches DLMM bin-array indexing, including negative ids", () => {
     expect(binArrayIndex(0)).toBe(0);
     expect(binArrayIndex(69)).toBe(0);

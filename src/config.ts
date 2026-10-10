@@ -69,7 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       minVolume24hUsd: num(env.MIN_VOLUME_24H_USD, 10_000),
     },
     rugFailScore: num(env.RUG_FAIL_SCORE, 60),
-    rugMinHolders: num(env.RUG_MIN_HOLDERS, 30),
+    rugMinHolders: num(env.RUG_MIN_HOLDERS, 100),
     rugFailClosed: bool(env.RUG_FAIL_CLOSED, true),
     scanLimit: num(env.SCAN_LIMIT, 40),
     consider: num(env.CONSIDER, 6),

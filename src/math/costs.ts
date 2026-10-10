@@ -64,6 +64,24 @@ export function binArrayIndex(binId: number): number {
   return div;
 }
 
+/**
+ * Shrink a requested range so every bin stays in the active bin's array.
+ * The active array is treated as already existing, so the clipped range pays
+ * no extra bin-array rent.
+ */
+export function clipRangeToBinArray(
+  activeBinId: number,
+  binsBelow: number,
+  binsAbove: number,
+): { binsBelow: number; binsAbove: number } {
+  const start = binArrayIndex(activeBinId) * BINS_PER_BIN_ARRAY;
+  const end = start + BINS_PER_BIN_ARRAY - 1;
+  return {
+    binsBelow: Math.max(0, Math.min(binsBelow, activeBinId - start)),
+    binsAbove: Math.max(0, Math.min(binsAbove, end - activeBinId)),
+  };
+}
+
 /** Arrays the position covers, excluding the active bin's array. */
 export function sunkBinArrayCount(minBinId: number, maxBinId: number, activeBinId: number): number {
   const indexes = new Set<number>();
@@ -82,6 +100,26 @@ export function positionAccountCount(minBinId: number, maxBinId: number): number
 export function poolSwapFeeFraction(pool: Pick<DiscoveredPool, "baseFeePct" | "dynamicFeePct">): number {
   const pct = Math.max(0, (pool.baseFeePct ?? 0) + (pool.dynamicFeePct ?? 0));
   return Math.min(pct / 100, 0.1);
+}
+
+/**
+ * SDK `computeCompositionFee`: when a deposit removes more X than it adds, the
+ * surplus Y is swapped and pays totalFee * (1 + totalFee). Strategy shapes put
+ * only one token in each bin, so this is 0 on those deposits. It is not a
+ * model of swapping against other LPs' existing reserves.
+ */
+export function compositionFeeAmount(params: {
+  feeRate: number;
+  inAmountX: number;
+  outAmountX: number;
+  inAmountY: number;
+  outAmountY: number;
+}): number {
+  if (!(params.outAmountX > params.inAmountX)) return 0;
+  const delta = params.inAmountY - params.outAmountY;
+  if (!(delta > 0)) return 0;
+  const rate = Math.min(Math.max(params.feeRate, 0), 0.1);
+  return delta * rate * (1 + rate);
 }
 
 export function isSolToken(token: { address: string; symbol: string }): boolean {

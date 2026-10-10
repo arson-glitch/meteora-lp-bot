@@ -123,6 +123,8 @@ export interface PaperPosition {
   maxHoldHours: number | null;
   /** Null closes on the first out-of-range mark. A positive value waits, in hours. */
   outOfRangeTimeoutHours?: number | null;
+  /** When true, recenter stays inside the active bin's array. */
+  stayInBinArray?: boolean;
   /** ISO time of the mark that first left the range, while a timeout is running. */
   outOfRangeSince?: string | null;
   tokenX: { address: string; symbol: string; decimals: number };

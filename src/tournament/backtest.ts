@@ -1,4 +1,4 @@
-import { advancePosition, openPaperPosition } from "../executor/paper.js";
+import { advancePosition, closePaperPosition, openPaperPosition } from "../executor/paper.js";
 import { inventoryAmounts, markValueUsd } from "../executor/pnl.js";
 import type { StrategyConfig } from "../strategy/schema.js";
 import type { CoinType, DiscoveredPool, PaperPosition } from "../types.js";
@@ -42,6 +42,12 @@ export interface TrialResult {
   rebalanceCount: number;
   equityCurve?: Array<{ t: number; equity: number }>;
   terminal?: TerminalState;
+  /** sampleKey of the coin, so extra pools of one coin count once. */
+  coinKey?: string;
+  /** Equity after costs minus buying the volatile token. */
+  vsTokenUsd?: number;
+  /** Deposit divided by pool TVL at the scan. */
+  poolShare?: number;
 }
 
 export interface TerminalState {
@@ -81,7 +87,7 @@ export function replayStrategy(params: {
   candleHours: number;
   coinType: CoinType;
   split: "train" | "test" | "holdout";
-  feeModel?: "tvl-share" | "active-bin";
+  feeModel?: "tvl-share" | "active-bin" | "crossed-bins";
   liquidityBins?: number;
   recordCurve?: boolean;
 }): TrialResult | null {
@@ -93,6 +99,7 @@ export function replayStrategy(params: {
   if (!(openPrice > 0)) return null;
 
   let clock = (candles[0]?.timestamp ?? 0) * 1000;
+  const volumeHistory: number[] = [];
   let position = openPaperPosition({
     pool: poolAt(params.pool, openPrice, frozenY, candles[0] as Candle, params.candleHours),
     strategy: params.strategy,
@@ -129,6 +136,15 @@ export function replayStrategy(params: {
       peak = Math.max(peak, equity);
       if (peak > 0) maxDrawdown = Math.max(maxDrawdown, (peak - equity) / peak);
     }
+    if (position.status === "open" && params.strategy.exit.compositeExit) {
+      const drawdown = peak > 0 ? (peak - equity) / peak : 0;
+      const medianVolume = median(volumeHistory);
+      if (volumeHistory.length >= 3 && drawdown >= 0.08 && medianVolume > 0 && candle.volumeUsd < medianVolume * 0.25) {
+        position = closePaperPosition(position, clock, "composite-exit");
+        equity = equityUsd(position);
+      }
+    }
+    volumeHistory.push(candle.volumeUsd);
     if (params.recordCurve) curve.push({ t: candle.timestamp, equity });
   }
 
@@ -157,8 +173,16 @@ export function replayStrategy(params: {
     closeReason: position.closeReason ?? null,
     rebalanceCount: position.rebalanceCount,
     equityCurve: params.recordCurve ? curve : undefined,
-    terminal: params.recordCurve ? terminalState(position) : undefined,
+    terminal: terminalState(position),
   };
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid] ?? 0;
+  return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
 }
 
 function terminalState(position: PaperPosition): TerminalState {

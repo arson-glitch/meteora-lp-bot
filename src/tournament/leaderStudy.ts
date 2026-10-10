@@ -59,7 +59,15 @@ export function describeCell(cell: GridCell): string {
         ? "close after 12 hours outside the range, 12% stop"
         : cell.exit === "rebalance"
           ? "rebalance when price leaves the range, 18% stop"
-          : "close outside the range, 8% stop, 15% take-profit";
+          : cell.exit === "patient"
+          ? "close after 48 hours outside the range, 18% stop, no rebalance"
+          : cell.exit === "stay"
+            ? "close after 96 hours outside the range, 18% stop, no rebalance"
+            : cell.exit === "rebalance6"
+              ? "rebalance after 6 hours outside the range, 18% stop"
+              : cell.exit === "guard"
+                ? "close after 96 hours outside the range, or sooner when an 8% drawdown coincides with a volume collapse, 18% stop"
+                : "close outside the range, 8% stop, 15% take-profit";
   const side = cell.side === "two-sided" ? "two-sided deposit" : cell.side === "quote" ? "quote-only deposit" : "token-only deposit";
   return `${cell.shape}, ${cell.width} range (${cell.binsBelow} bins below the active bin, ${cell.binsAbove} above), ${side}, ${exit}`;
 }
@@ -94,7 +102,7 @@ export function studyLeaders(params: {
         candleHours: window.candleHours,
         coinType: board.coinType,
         split: window.split,
-        feeModel: "tvl-share",
+        feeModel: "crossed-bins",
         recordCurve: true,
       });
       if (!played) continue;

@@ -99,11 +99,11 @@ Set in `.env`. Defaults:
 | `MIN_TVL_USD` | 5000 | Rug check and the open gate |
 | `MIN_VOLUME_24H_USD` | 10000 | Open gate |
 
-`RUG_FAIL_SCORE` (default 60) is applied to RugCheck's normalised score, treated as higher-is-riskier. Any danger-level risk, or a risk whose name mentions mint or freeze authority, fails the token. Quote mints (SOL, USDC, USDT, and a few other stables) are not treated as the risk asset, because USDC's freeze authority would otherwise fail every SOL-USDC pool. If RugCheck itself errors, the token fails closed (`RUG_FAIL_CLOSED=true`).
+`RUG_FAIL_SCORE` (default 60) is applied to RugCheck's normalised score, treated as higher-is-riskier. Any danger-level risk, or a risk whose name mentions mint or freeze authority, fails the token. Quote mints (SOL, USDC, USDT, and a few other stables) are not treated as the risk asset, because USDC's freeze authority would otherwise fail every SOL-USDC pool. If RugCheck itself errors, the token fails closed (`RUG_FAIL_CLOSED=true`). `RUG_MIN_HOLDERS` defaults to 100, matching Meteora's published blacklist floor.
 
 ## Strategy tournament
 
-The tournament is paper-only. It does not import the live executor and does not use the 3-position cap. `npm run tournament` writes `reports/leaderboard.md`, `.csv`, and `.json`, and replaces `strategies/winners/*.json` when a bucket clears both the time split and the cross-coin holdout. It creates `data/tournament-forward.json` only when that file is missing, so a rerun does not wipe marked paper positions.
+The tournament is paper-only. It does not import the live executor and does not use the 3-position cap. `npm run tournament` writes `reports/leaderboard.md`, `.csv`, and `.json`, plus `reports/hypotheses-YYYY-MM-DD.md`. It replaces `strategies/winners/*.json` only when a yield strategy clears the cost-adjusted time split and holdout. Bid-Ask is not promoted. It creates `data/tournament-forward.json` only when that file is missing, so a rerun does not wipe marked paper positions.
 
 ```bash
 npm run tournament
@@ -134,7 +134,7 @@ A coin younger than a day stays in `fresh-memecoin` even if the move is already 
 
 ### Strategy grid
 
-108 cells: shape (Spot, Curve, Bid-Ask) × width (narrow / medium / wide) × side (two-sided, quote only, token only) × exit.
+108 classic cells: shape (Spot, Curve, Bid-Ask) × width (narrow / medium / wide) × side (two-sided, quote only, token only) × exit. Extra cells are Spot and Curve at narrow and medium width, clipped to one bin array, with 48-hour and 96-hour holds and no rebalance. A broad two-sided Spot (80 bins each side) covers the high-fee wide-range hypothesis. Bid-Ask stays in the grid as an exit comparison and is not a yield winner.
 
 | Width | Two-sided bins | Single-sided bins |
 | --- | --- | --- |
@@ -150,14 +150,18 @@ Quote versus token is resolved per pool. Price is token Y per token X. Y is the 
 | `timeout` | Stay out of range for 12 hours before closing. Stop-loss 12%. |
 | `rebalance` | Recenter when the active bin leaves the range. Stop-loss 18%. |
 | `tp` | Close out of range immediately. Stop-loss 8%, take-profit 15%. |
+| `patient` | Close after 48 hours out of range. Stop-loss 18%. No rebalance. Single bin array on the cost-aware cells. |
+| `stay` | Close after 96 hours out of range. Stop-loss 18%. No rebalance. |
+| `rebalance6` | Recenter after 6 hours out of range. Stop-loss 18%. |
+| `guard` | Same hold as `stay`, and also close when an 8% drawdown coincides with a volume collapse. |
 
 Bin step is not a cell. The pool creator sets it. The grid does not search it, and winners are not split by bin-step band.
 
 ### Backtest and scoring
 
-Older pools use daily Meteora candles over 90 days when that series covers at least 20 days. Pools younger than 20 days use 4-hour candles over 16 days. Pools younger than 36 hours use 1-hour candles over 48 hours. GeckoTerminal is the fallback when Meteora returns fewer than eight bars. Fee math is the same pro-rata estimate as the paper executor.
+Older pools use daily Meteora candles over 90 days when that series covers at least 20 days. Pools younger than 20 days use 4-hour candles over 16 days. Pools younger than 36 hours use 1-hour candles over 48 hours. GeckoTerminal is the fallback when Meteora returns fewer than eight bars. Tournament fees split the candle's LP fee (already net of the protocol fee) across bins the price walked. Ranking then subtracts exit slippage, transaction fees, and non-refundable bin-array rent.
 
-Ranking uses train coins and the first 70% of their candles. The top five are re-ranked on the last 30% of those same candles. A winner also has to make money on the held-out coins, which are replayed on their full history and never appear in the ranking. The time-split sample needs at least eight train trials and five test trials, and the holdout needs at least four trials, each with a positive median and a positive mean. Otherwise that bucket keeps the hand-written placeholder.
+Ranking uses train coins and the first 70% of their candles. The top five yield strategies are re-ranked on the last 30%. A winner has to beat cash and beat holding the token on the holdout, with at least four holdout trials, and no single coin above 50% of positive holdout PnL. Otherwise that bucket is not promoted.
 
 ## Adding a strategy
 

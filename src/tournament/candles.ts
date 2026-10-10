@@ -197,7 +197,7 @@ async function fetchGecko(pool: DiscoveredPool, nowMs: number): Promise<CandleSe
  */
 export function estimateCandleLpFees(pool: DiscoveredPool, volumeUsd: number): number {
   if (!(volumeUsd > 0)) return 0;
-  const pct = (pool.baseFeePct ?? 0) + (pool.dynamicFeePct ?? 0);
+  const pct = Math.min(10, Math.max(0, (pool.baseFeePct ?? 0) + (pool.dynamicFeePct ?? 0)));
   const share = observedLpFeeShare(pool.fees["24h"] ?? 0, pool.protocolFees["24h"] ?? 0);
   return volumeUsd * (pct / 100) * share;
 }

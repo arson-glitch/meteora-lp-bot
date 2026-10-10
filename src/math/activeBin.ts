@@ -38,3 +38,39 @@ export function activeBinFeeUsd(params: {
   const share = Math.min(ourUsd / poolBinUsd, 1);
   return params.poolLpFeesPerHour * params.hours * share;
 }
+
+/**
+ * A swap that walks from one bin to another pays a fee in each bin it crosses.
+ * The candle's observed LP fee (already net of the protocol share) is split
+ * evenly across those bins, then by our liquidity versus the assumed pool
+ * liquidity in that bin. A move that stays in one bin matches the active-bin
+ * model. This is not a Swap2Evt replay; we do not have historical swap tapes.
+ */
+export function crossedBinFeeUsd(params: {
+  poolLpFeesPerHour: number;
+  hours: number;
+  poolTvlUsd: number;
+  liquidityBins: number;
+  bins: SimBin[];
+  fromBinId: number;
+  toBinId: number;
+  priceXUsd: number;
+  priceYUsd: number;
+}): number {
+  if (params.hours <= 0 || params.poolLpFeesPerHour <= 0 || params.poolTvlUsd <= 0) return 0;
+  if (params.liquidityBins <= 0) return 0;
+  const lo = Math.min(params.fromBinId, params.toBinId);
+  const hi = Math.max(params.fromBinId, params.toBinId);
+  const crossed = params.bins.filter((bin) => bin.binId >= lo && bin.binId <= hi);
+  if (crossed.length === 0) return 0;
+  const poolBinUsd = params.poolTvlUsd / params.liquidityBins;
+  if (poolBinUsd <= 0) return 0;
+  const slice = (params.poolLpFeesPerHour * params.hours) / crossed.length;
+  let fee = 0;
+  for (const bin of crossed) {
+    const ourUsd = bin.amountX * params.priceXUsd + bin.amountY * params.priceYUsd;
+    if (ourUsd <= 0) continue;
+    fee += slice * Math.min(ourUsd / poolBinUsd, 1);
+  }
+  return fee;
+}

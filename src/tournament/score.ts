@@ -4,17 +4,19 @@ import { COIN_TYPES } from "./classify.js";
 import type { TrialResult } from "./backtest.js";
 
 /**
- * Rank on the train window by median net return. The time-split test only
- * re-ranks the top five. The single best of those is promoted only when its
- * time-split mean and median are positive and the cross-coin holdout also
- * has enough trials with a positive mean and median. Holdout coins are never
- * used to rank or to pick among the top five.
+ * Rank on the train window by median net return. Trials are expected to
+ * already include crossed-bin LP fees and full exit costs. The time-split
+ * test re-ranks the top five yield strategies. Bid-Ask is not a yield
+ * strategy. Promotion also requires the cost-adjusted holdout to beat cash
+ * and to beat holding the volatile token, with no single coin above half of
+ * the positive PnL. Holdout coins are never used to rank.
  */
 
 export const MIN_TRAIN_TRIALS = 8;
 export const MIN_TEST_TRIALS = 5;
 export const MIN_HOLDOUT_TRIALS = 4;
 export const CONFIRM_TOP_K = 5;
+export const MAX_COIN_POSITIVE_SHARE = 0.5;
 
 export interface SplitStats {
   n: number;
@@ -28,6 +30,9 @@ export interface SplitStats {
   meanIlUsd: number | null;
   meanVsHodl: number | null;
   meanNetPnlUsd: number | null;
+  meanVsToken: number | null;
+  medianVsToken: number | null;
+  maxPositiveCoinShare: number | null;
 }
 
 export interface RankedStrategy {
@@ -84,7 +89,8 @@ function scoreBucket(
   eligible.forEach((row, index) => {
     row.trainRank = index + 1;
   });
-  const confirmation = eligible.slice(0, CONFIRM_TOP_K);
+  const yieldEligible = eligible.filter((row) => row.cell?.shape !== "BidAsk");
+  const confirmation = yieldEligible.slice(0, CONFIRM_TOP_K);
   for (const row of confirmation) row.inConfirmationSet = true;
 
   const confirmed = confirmation
@@ -93,23 +99,29 @@ function scoreBucket(
   const best = confirmed[0] ?? null;
   let winner: RankedStrategy | null = null;
   let promotionNote: string;
-  if (!best) {
+  if (eligible.length > 0 && yieldEligible.length === 0) {
+    promotionNote = "Every train-eligible strategy is Bid-Ask. Bid-Ask is treated as an exit tool, not a yield strategy, so nothing is promoted.";
+  } else if (!best) {
     promotionNote =
       eligible.length === 0
         ? `No strategy has ${MIN_TRAIN_TRIALS} or more train trials, so nothing is promoted.`
-        : `The top train strategies do not have ${MIN_TEST_TRIALS} time-split test trials, so nothing is promoted.`;
+        : `The top yield strategies do not have ${MIN_TEST_TRIALS} time-split test trials, so nothing is promoted.`;
   } else if ((best.test.medianReturn ?? 0) <= 0 || (best.test.meanReturn ?? 0) <= 0) {
-    promotionNote = `${best.strategyId} led the time-split test among the top ${CONFIRM_TOP_K} train strategies, but the test median (${fmtPct(best.test.medianReturn)}) and mean (${fmtPct(best.test.meanReturn)}) are not both positive, so it is not promoted.`;
+    promotionNote = `${best.strategyId} led the time-split test among the top ${CONFIRM_TOP_K} yield strategies, but the test median (${fmtPct(best.test.medianReturn)}) and mean (${fmtPct(best.test.meanReturn)}) are not both positive, so it is not promoted.`;
   } else if (
     best.holdout.n < MIN_HOLDOUT_TRIALS ||
     (best.holdout.medianReturn ?? 0) <= 0 ||
     (best.holdout.meanReturn ?? 0) <= 0
   ) {
-    promotionNote = `${best.strategyId} passed the time split (median ${fmtPct(best.test.medianReturn)}, mean ${fmtPct(best.test.meanReturn)}) but the cross-coin holdout did not clear n≥${MIN_HOLDOUT_TRIALS} with a positive median (${fmtPct(best.holdout.medianReturn)}) and mean (${fmtPct(best.holdout.meanReturn)}), so it is not promoted.`;
+    promotionNote = `${best.strategyId} passed the time split (median ${fmtPct(best.test.medianReturn)}, mean ${fmtPct(best.test.meanReturn)}) but the cost-adjusted holdout did not beat cash (n=${best.holdout.n}, median ${fmtPct(best.holdout.medianReturn)}, mean ${fmtPct(best.holdout.meanReturn)}), so it is not promoted.`;
+  } else if ((best.holdout.medianVsToken ?? 0) <= 0 || (best.holdout.meanVsToken ?? 0) <= 0) {
+    promotionNote = `${best.strategyId} beat cash on the holdout but did not beat holding the token (median ${usd(best.holdout.medianVsToken)}, mean ${usd(best.holdout.meanVsToken)}), so it is not promoted.`;
+  } else if (best.holdout.maxPositiveCoinShare === null || best.holdout.maxPositiveCoinShare > MAX_COIN_POSITIVE_SHARE) {
+    promotionNote = `${best.strategyId} beat cash and the token on the holdout, but one coin is ${fmtPct(best.holdout.maxPositiveCoinShare)} of positive PnL, above the ${fmtPct(MAX_COIN_POSITIVE_SHARE)} cap, so it is not promoted.`;
   } else {
     best.promoted = true;
     winner = best;
-    promotionNote = `${best.strategyId} is promoted: train rank ${best.trainRank}, time-split n=${best.test.n} median ${fmtPct(best.test.medianReturn)}, holdout n=${best.holdout.n} median ${fmtPct(best.holdout.medianReturn)}.`;
+    promotionNote = `${best.strategyId} is promoted: train rank ${best.trainRank}, time-split n=${best.test.n} median ${fmtPct(best.test.medianReturn)}, holdout n=${best.holdout.n} median ${fmtPct(best.holdout.medianReturn)}, holdout vs token ${usd(best.holdout.meanVsToken)}, largest coin ${fmtPct(best.holdout.maxPositiveCoinShare)} of positive PnL.`;
   }
 
   rows.sort(compareTrain);
@@ -130,10 +142,14 @@ export function summarize(trials: TrialResult[]): SplitStats {
       meanIlUsd: null,
       meanVsHodl: null,
       meanNetPnlUsd: null,
+      meanVsToken: null,
+      medianVsToken: null,
+      maxPositiveCoinShare: null,
     };
   }
   const returns = trials.map((trial) => trial.returnPct);
   const drawdowns = trials.map((trial) => trial.maxDrawdownPct);
+  const versusToken = trials.map((trial) => trial.vsTokenUsd).filter((value): value is number => value !== undefined);
   return {
     n: trials.length,
     meanReturn: mean(returns),
@@ -146,7 +162,22 @@ export function summarize(trials: TrialResult[]): SplitStats {
     meanIlUsd: mean(trials.map((trial) => trial.ilUsd)),
     meanVsHodl: mean(trials.map((trial) => trial.vsHodlUsd)),
     meanNetPnlUsd: mean(trials.map((trial) => trial.netPnlUsd)),
+    meanVsToken: versusToken.length > 0 ? mean(versusToken) : null,
+    medianVsToken: versusToken.length > 0 ? median(versusToken) : null,
+    maxPositiveCoinShare: positiveCoinShare(trials),
   };
+}
+
+function positiveCoinShare(trials: TrialResult[]): number | null {
+  const coins = new Map<string, number>();
+  for (const trial of trials) {
+    if (trial.netPnlUsd <= 0) continue;
+    const key = trial.coinKey ?? trial.poolAddress;
+    coins.set(key, (coins.get(key) ?? 0) + trial.netPnlUsd);
+  }
+  const positive = [...coins.values()].reduce((sum, value) => sum + value, 0);
+  if (positive <= 0) return null;
+  return Math.max(...coins.values()) / positive;
 }
 
 function compareTrain(a: RankedStrategy, b: RankedStrategy): number {
@@ -198,4 +229,10 @@ function median(values: number[]): number {
 function fmtPct(value: number | null): string {
   if (value === null) return "n/a";
   return `${(value * 100).toFixed(2)}%`;
+}
+
+function usd(value: number | null): string {
+  if (value === null) return "n/a";
+  const sign = value < 0 ? "-" : "";
+  return `${sign}$${Math.abs(value).toFixed(2)}`;
 }

@@ -13,7 +13,7 @@ import { assignBuckets, selectTournamentBuckets } from "../src/tournament/discov
 import { holdoutCount, splitCoinKeys } from "../src/tournament/holdout.js";
 import { appendForwardPools, emptyForwardBook } from "../src/tournament/forward.js";
 import { openForwardBook } from "../src/tournament/forward.js";
-import { gridCells, gridStrategies, strategyFromCell } from "../src/tournament/grid.js";
+import { classicGridCells, costAwareCells, gridCells, gridStrategies, strategyFromCell } from "../src/tournament/grid.js";
 import { scoreTrials } from "../src/tournament/score.js";
 import type { TrialResult } from "../src/tournament/backtest.js";
 import type { CoinType, DiscoveredPool, MarketContext } from "../src/types.js";
@@ -97,10 +97,15 @@ describe("coin classifier", () => {
 });
 
 describe("strategy grid", () => {
-  it("builds 108 unique cells and resolves quote versus token per pool", () => {
+  it("builds 108 classic cells plus the cost-aware family", () => {
+    const classic = classicGridCells();
+    expect(classic).toHaveLength(108);
+    expect(costAwareCells().every((cell) => cell.stayInBinArray)).toBe(true);
+    expect(costAwareCells().every((cell) => cell.shape === "Spot" || cell.shape === "Curve")).toBe(true);
     const cells = gridCells();
-    expect(cells).toHaveLength(108);
-    expect(new Set(cells.map((cell) => cell.id)).size).toBe(108);
+    expect(new Set(cells.map((cell) => cell.id)).size).toBe(cells.length);
+    expect(cells.find((cell) => cell.id === "grid-spot-broad-two-stay")?.binsBelow).toBe(80);
+    expect(cells.find((cell) => cell.id === "grid-spot-wide-two-rebalance6")?.outOfRangeTimeoutHours).toBe(6);
     expect(new Set(cells.map((cell) => cell.shape))).toEqual(new Set(["Spot", "Curve", "BidAsk"]));
 
     const quoteCell = cells.find((cell) => cell.side === "quote" && cell.width === "medium");
@@ -329,6 +334,28 @@ describe("tournament scoring", () => {
     const missedHoldout = many("miss", 0.05, 0.04, -0.02);
     expect(scoreTrials(missedHoldout, []).find((board) => board.coinType === "stable")?.winner).toBeNull();
   });
+
+  it("rejects a holdout that one coin dominates or that loses to the token", () => {
+    const concentrated = many("wide", 0.05, 0.04, 0.04).map((trial) =>
+      trial.split === "holdout" ? { ...trial, coinKey: "same-coin" } : trial,
+    );
+    const concentratedBoard = scoreTrials(concentrated, []).find((board) => board.coinType === "stable");
+    expect(concentratedBoard?.winner).toBeNull();
+    expect(concentratedBoard?.promotionNote).toContain("positive PnL");
+
+    const losesToToken = many("tok", 0.05, 0.04, 0.04).map((trial) =>
+      trial.split === "holdout" ? { ...trial, vsTokenUsd: -5 } : trial,
+    );
+    const tokenBoard = scoreTrials(losesToToken, []).find((board) => board.coinType === "stable");
+    expect(tokenBoard?.winner).toBeNull();
+    expect(tokenBoard?.promotionNote).toContain("holding the token");
+  });
+
+  it("does not promote Bid-Ask as a yield strategy", () => {
+    const board = scoreTrials(many("grid-bidask-wide-two-oor", 0.2, 0.1, 0.1), gridCells()).find((item) => item.coinType === "stable");
+    expect(board?.winner).toBeNull();
+    expect(board?.promotionNote).toContain("Bid-Ask");
+  });
 });
 
 describe("extra pools and forward append", () => {
@@ -396,8 +423,8 @@ describe("forward paper book", () => {
       nowMs: now,
     });
     expect(book.kind).toBe("tournament-forward");
-    expect(book.positions).toHaveLength(108);
-    expect(new Set(book.positions.map((position) => position.strategyId)).size).toBe(108);
+    expect(book.positions).toHaveLength(gridStrategies().length);
+    expect(new Set(book.positions.map((position) => position.strategyId)).size).toBe(gridStrategies().length);
     expect(book.positions.every((position) => position.mode === "paper" && position.status === "open")).toBe(true);
   });
 });
@@ -527,6 +554,8 @@ function fakeTrial(strategyId: string, split: TrialResult["split"], returnPct: n
     ilUsd: -1,
     hodlUsd: 250,
     vsHodlUsd: 250 * returnPct,
+    vsTokenUsd: 250 * returnPct,
+    coinKey: `${split}-coin-${index}`,
     maxDrawdownPct: 0.05,
     closeReason: null,
     rebalanceCount: 0,

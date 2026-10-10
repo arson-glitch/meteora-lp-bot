@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { sleep } from "../http.js";
+import { assumedLiquidityBins } from "../math/activeBin.js";
 import { parseStrategy, type StrategyConfig } from "../strategy/schema.js";
 import type { CoinType, DiscoveredPool } from "../types.js";
 import { replayStrategy, splitCandles, MIN_SERIES_CANDLES, type TrialResult } from "./backtest.js";
-import { fetchCandleSeries, seriesSpanDays, type CandleSeries } from "./candles.js";
+import { fetchCandleSeries, seriesSpanDays, type Candle, type CandleSeries } from "./candles.js";
 import { sampleKey } from "./classify.js";
 import {
   CANDIDATE_COINS_PER_BUCKET,
@@ -18,7 +19,9 @@ import { splitCoinKeys } from "./holdout.js";
 import { loadForwardBook, openForwardBook, saveForwardBook, type TournamentForwardBook } from "./forward.js";
 import { gridCells, gridStrategies, strategyFromCell, type GridCell } from "./grid.js";
 import { renderLeaderboardCsv, renderLeaderboardMarkdown, type PoolSample } from "./report.js";
-import { studyLeaders, type LeaderStudy, type StudyWindow } from "./leaderStudy.js";
+import { renderHypotheses, type SizeSweepRow } from "./hypotheses.js";
+import { tokenHoldUsd, studyLeaders, type LeaderStudy, type StudyWindow } from "./leaderStudy.js";
+import { withCosts } from "./edge.js";
 import { solPriceUsd } from "./frozenBook.js";
 import { scoreTrials, type BucketLeaderboard } from "./score.js";
 
@@ -73,6 +76,9 @@ export async function runTournament(options: TournamentRunOptions): Promise<Tour
 
   const cells = gridCells();
   const strategies = gridStrategies();
+  const price = await solPriceUsd(universe);
+  log(`Scoring with crossed-bin fees and exit costs at SOL $${price.toFixed(2)}`);
+  const sweepPools: Array<{ coinType: CoinType; pool: DiscoveredPool; candles: Candle[]; candleHours: number }> = [];
   const trials: TrialResult[] = [];
   const samples: PoolSample[] = [];
   const windows: StudyWindow[] = [];
@@ -137,8 +143,11 @@ export async function runTournament(options: TournamentRunOptions): Promise<Tour
           key,
           label: pool.name,
         });
+        if (!sweepPools.some((item) => item.coinType === bucket.type)) {
+          sweepPools.push({ coinType: bucket.type, pool, candles: series.candles, candleHours: series.candleHours });
+        }
         for (const strategy of strategies) {
-          const trial = replayStrategy({
+          const trial = scoreReplay({
             pool,
             strategy,
             candles: series.candles,
@@ -146,6 +155,8 @@ export async function runTournament(options: TournamentRunOptions): Promise<Tour
             candleHours: series.candleHours,
             coinType: bucket.type,
             split: "holdout",
+            solPriceUsd: price,
+            coinKey: key,
           });
           if (trial) trials.push(trial);
         }
@@ -172,7 +183,7 @@ export async function runTournament(options: TournamentRunOptions): Promise<Tour
           });
         }
         for (const strategy of strategies) {
-          const trainTrial = replayStrategy({
+          const trainTrial = scoreReplay({
             pool,
             strategy,
             candles: train,
@@ -180,8 +191,10 @@ export async function runTournament(options: TournamentRunOptions): Promise<Tour
             candleHours: series.candleHours,
             coinType: bucket.type,
             split: "train",
+            solPriceUsd: price,
+            coinKey: key,
           });
-          const testTrial = replayStrategy({
+          const testTrial = scoreReplay({
             pool,
             strategy,
             candles: test,
@@ -189,6 +202,8 @@ export async function runTournament(options: TournamentRunOptions): Promise<Tour
             candleHours: series.candleHours,
             coinType: bucket.type,
             split: "test",
+            solPriceUsd: price,
+            coinKey: key,
           });
           if (trainTrial) trials.push(trainTrial);
           if (testTrial) trials.push(testTrial);
@@ -200,9 +215,9 @@ export async function runTournament(options: TournamentRunOptions): Promise<Tour
   }
 
   const boards = scoreTrials(trials, cells);
-  const price = await solPriceUsd(universe);
   log(`Cost study of the leading cell in each bucket at SOL $${price.toFixed(2)}`);
   const leaders = studyLeaders({ boards, windows, solPriceUsd: price, sizeUsd });
+  const sweep = sizeSweep({ pools: sweepPools, sizeUsd, solPriceUsd: price });
   for (const study of leaders) {
     log(`${study.coinType} ${study.strategyId}${study.promoted ? " promoted" : ""}`);
   }
@@ -218,6 +233,19 @@ export async function runTournament(options: TournamentRunOptions): Promise<Tour
     JSON.stringify({ generatedAt, sizeUsd, samples, boards, trialCount: trials.length }, null, 2),
   );
   const winnerIds = writeWinners(options.strategiesDir, boards, cells);
+  const hypothesisPath = join(options.reportsDir, `hypotheses-${generatedAt.slice(0, 10)}.md`);
+  writeFileSync(
+    hypothesisPath,
+    renderHypotheses({
+      generatedAt,
+      sizeUsd,
+      solPriceUsd: price,
+      trials,
+      pools: universe,
+      sweep,
+    }),
+  );
+  log(`Hypotheses: ${hypothesisPath}`);
 
   let forward: TournamentForwardBook | null = null;
   if (options.writeForward !== false) {
@@ -297,8 +325,71 @@ function strategyToJson(config: StrategyConfig): unknown {
       takeProfitPct: config.exit.takeProfitPct,
       maxHoldHours: config.exit.maxHoldHours,
       outOfRangeTimeoutHours: config.exit.outOfRangeTimeoutHours ?? null,
+      ...(config.exit.compositeExit ? { compositeExit: true } : {}),
     },
+    ...(config.stayInBinArray ? { stayInBinArray: true } : {}),
   };
+}
+
+function scoreReplay(params: {
+  pool: DiscoveredPool;
+  strategy: StrategyConfig;
+  candles: Candle[];
+  sizeUsd: number;
+  candleHours: number;
+  coinType: CoinType;
+  split: "train" | "test" | "holdout";
+  solPriceUsd: number;
+  coinKey: string;
+}): TrialResult | null {
+  const liquidityBins = assumedLiquidityBins(params.pool);
+  const played = replayStrategy({
+    pool: params.pool,
+    strategy: params.strategy,
+    candles: params.candles,
+    sizeUsd: params.sizeUsd,
+    candleHours: params.candleHours,
+    coinType: params.coinType,
+    split: params.split,
+    feeModel: "crossed-bins",
+    liquidityBins,
+  });
+  if (!played) return null;
+  const priced = withCosts(played, params.pool, params.solPriceUsd, liquidityBins);
+  const hold = tokenHoldUsd(params.pool, params.candles, params.sizeUsd);
+  priced.coinKey = params.coinKey;
+  priced.vsTokenUsd = priced.equityUsd - hold.usd;
+  priced.poolShare = params.pool.tvlUsd > 0 ? params.sizeUsd / params.pool.tvlUsd : 0;
+  return priced;
+}
+
+function sizeSweep(params: {
+  pools: Array<{ coinType: CoinType; pool: DiscoveredPool; candles: Candle[]; candleHours: number }>;
+  sizeUsd: number;
+  solPriceUsd: number;
+}): SizeSweepRow[] {
+  const strategy = gridStrategies().find((item) => item.id === "grid-spot-broad-two-stay");
+  if (!strategy || params.pools.length === 0) return [];
+  const sizes = [50, params.sizeUsd, 1_000, 5_000];
+  return sizes.map((size) => {
+    const nets: number[] = [];
+    for (const item of params.pools) {
+      const trial = scoreReplay({
+        pool: item.pool,
+        strategy,
+        candles: item.candles,
+        sizeUsd: size,
+        candleHours: item.candleHours,
+        coinType: item.coinType,
+        split: "holdout",
+        solPriceUsd: params.solPriceUsd,
+        coinKey: sampleKey(item.pool),
+      });
+      if (trial) nets.push(trial.netPnlUsd);
+    }
+    const meanNet = nets.length === 0 ? null : nets.reduce((sum, value) => sum + value, 0) / nets.length;
+    return { sizeUsd: size, n: nets.length, meanNetUsd: meanNet };
+  });
 }
 
 function uniqueNames(pools: DiscoveredPool[]): string {

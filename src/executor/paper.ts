@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { activeBinFeeUsd, assumedLiquidityBins } from "../math/activeBin.js";
+import { activeBinFeeUsd, assumedLiquidityBins, crossedBinFeeUsd } from "../math/activeBin.js";
 import { binIdFromPrice, priceFromBinId } from "../math/bins.js";
+import { clipRangeToBinArray } from "../math/costs.js";
 import { allocateByWeight, strategyBinWeights } from "../math/distribution.js";
 import { estimateLpFeesUsd } from "../math/fees.js";
 import { layoutForStrategy } from "../strategy/sides.js";
@@ -32,8 +33,11 @@ export function planPosition(pool: DiscoveredPool, strategy: StrategyConfig): Po
   if (!(pool.currentPrice > 0)) throw new Error("DLMM plan requires a positive price");
   const layout = layoutForStrategy(pool, strategy);
   const activeBinId = binIdFromPrice(pool.currentPrice, pool.binStep, "nearest");
-  const minBinId = activeBinId - layout.binsBelow;
-  const maxBinId = activeBinId + layout.binsAbove;
+  const clipped = strategy.stayInBinArray
+    ? clipRangeToBinArray(activeBinId, layout.binsBelow, layout.binsAbove)
+    : layout;
+  const minBinId = activeBinId - clipped.binsBelow;
+  const maxBinId = activeBinId + clipped.binsAbove;
   const binCount = maxBinId - minBinId + 1;
   return {
     activeBinId,
@@ -108,6 +112,7 @@ export function openPaperPosition(params: {
     rebalanceEdgeBins: params.strategy.exit.rebalanceEdgeBins,
     maxHoldHours: params.strategy.exit.maxHoldHours,
     outOfRangeTimeoutHours: params.strategy.exit.outOfRangeTimeoutHours ?? null,
+    stayInBinArray: params.strategy.stayInBinArray === true,
     outOfRangeSince: null,
     tokenX: {
       address: params.pool.tokenX.address,
@@ -132,8 +137,9 @@ export function advancePosition(params: {
    * `tvl-share` is the default: in-range value / pool TVL.
    * `active-bin` pays the pool's LP fees only to the active bin, by that
    * bin's share of an assumed uniform pool distribution.
+   * `crossed-bins` splits the same LP fee across every bin the price walked.
    */
-  feeModel?: "tvl-share" | "active-bin";
+  feeModel?: "tvl-share" | "active-bin" | "crossed-bins";
   liquidityBins?: number;
 }): AdvanceResult {
   const position = structuredClone(params.position);
@@ -159,12 +165,25 @@ export function advancePosition(params: {
   const wasInRange = inRange(position, previousActive);
   const nowInRange = inRange(position, nextActive);
   const factor = wasInRange && nowInRange ? 1 : wasInRange || nowInRange ? 0.5 : 0;
-  const feeUsd = params.feeModel === "active-bin"
+  const liquidityBins = params.liquidityBins ?? assumedLiquidityBins(params.pool);
+  const feeUsd = params.feeModel === "crossed-bins"
+    ? crossedBinFeeUsd({
+        poolLpFeesPerHour: lpFeesPerHour(params.pool),
+        hours: elapsed,
+        poolTvlUsd: params.pool.tvlUsd,
+        liquidityBins,
+        bins: position.bins,
+        fromBinId: previousActive,
+        toBinId: nextActive,
+        priceXUsd: position.priceXUsd,
+        priceYUsd: position.priceYUsd,
+      })
+    : params.feeModel === "active-bin"
     ? activeBinFeeUsd({
         poolLpFeesPerHour: lpFeesPerHour(params.pool),
         hours: elapsed,
         poolTvlUsd: params.pool.tvlUsd,
-        liquidityBins: params.liquidityBins ?? assumedLiquidityBins(params.pool),
+        liquidityBins,
         bin: position.bins.find((bin) => bin.binId === nextActive) ?? null,
         priceXUsd: position.priceXUsd,
         priceYUsd: position.priceYUsd,
@@ -202,9 +221,17 @@ export function advancePosition(params: {
   }
   if (!nowInRange) {
     if (position.onOutOfRange === "rebalance") {
-      position.outOfRangeSince = null;
-      recenter(position, params.pool);
-      events.push({ type: "rebalance", detail: "recentered after leaving the range" });
+      const delay = position.outOfRangeTimeoutHours ?? 0;
+      if (delay > 0 && !outOfRangeTimedOut(position, params.nowMs)) {
+        events.push({
+          type: "mark",
+          detail: `out of range since ${position.outOfRangeSince}; rebalance waits ${delay}h`,
+        });
+      } else {
+        position.outOfRangeSince = null;
+        recenter(position, params.pool);
+        events.push({ type: "rebalance", detail: delay > 0 ? `recentered after ${delay}h out of range` : "recentered after leaving the range" });
+      }
     } else if (outOfRangeTimedOut(position, params.nowMs)) {
       const waited = (position.outOfRangeTimeoutHours ?? 0) > 0;
       closePosition(position, params.nowMs, waited ? "out-of-range-timeout" : "out-of-range");
@@ -260,8 +287,11 @@ function recenter(position: PaperPosition, pool: DiscoveredPool): void {
     return;
   }
   const activeBinId = position.activeBinId;
-  const minBinId = activeBinId - position.binsBelow;
-  const maxBinId = activeBinId + position.binsAbove;
+  const clipped = position.stayInBinArray
+    ? clipRangeToBinArray(activeBinId, position.binsBelow, position.binsAbove)
+    : { binsBelow: position.binsBelow, binsAbove: position.binsAbove };
+  const minBinId = activeBinId - clipped.binsBelow;
+  const maxBinId = activeBinId + clipped.binsAbove;
   position.bins = buildBins({
     binStep: position.binStep,
     shape: position.shape,
@@ -279,6 +309,12 @@ function recenter(position: PaperPosition, pool: DiscoveredPool): void {
   position.rebalanceCount += 1;
   position.dynamicPosition = maxBinId - minBinId + 1 > 70;
   if (pool.address !== position.poolAddress) return;
+}
+
+export function closePaperPosition(position: PaperPosition, nowMs: number, reason: string): PaperPosition {
+  const next = structuredClone(position);
+  closePosition(next, nowMs, reason);
+  return next;
 }
 
 function closePosition(position: PaperPosition, nowMs: number, reason: string): void {

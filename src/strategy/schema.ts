@@ -44,6 +44,11 @@ export interface StrategyConfig {
   coinType?: CoinType | null;
   priority: number;
   manualOnly: boolean;
+  /**
+   * When true, the open and any recenter are clipped to the active bin's
+   * array so the position does not pay for a second bin array.
+   */
+  stayInBinArray?: boolean;
   requires: EntryClause;
   when: EntryClause[];
   exit: {
@@ -54,6 +59,8 @@ export interface StrategyConfig {
     maxHoldHours: number | null;
     /** Null or omitted closes as soon as the active bin leaves the range. */
     outOfRangeTimeoutHours?: number | null;
+    /** Close when drawdown and a volume collapse happen together. */
+    compositeExit?: boolean;
   };
 }
 
@@ -128,6 +135,7 @@ export function parseStrategy(raw: unknown, filename: string): StrategyConfig {
     coinType,
     priority: requireNumber(row, "priority", filename),
     manualOnly: row.manualOnly === true,
+    stayInBinArray: row.stayInBinArray === true,
     requires,
     when: whenRaw.map((clause, index) => parseClause(clause, `${filename} when[${index}]`)),
     exit: {
@@ -141,6 +149,7 @@ export function parseStrategy(raw: unknown, filename: string): StrategyConfig {
         ? null
         : requireNumber(exit, "maxHoldHours", filename),
       outOfRangeTimeoutHours,
+      ...(exit.compositeExit === true ? { compositeExit: true } : {}),
     },
   };
 }
