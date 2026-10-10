@@ -90,6 +90,8 @@ export function replayStrategy(params: {
   feeModel?: "tvl-share" | "active-bin" | "crossed-bins";
   liquidityBins?: number;
   recordCurve?: boolean;
+  /** Wick walks high and low inside the bar. Close marks the bar at its close only. */
+  path?: "wick" | "close";
 }): TrialResult | null {
   const { candles } = params;
   if (candles.length < 2) return null;
@@ -115,7 +117,7 @@ export function replayStrategy(params: {
 
   for (let index = 0; index < candles.length; index += 1) {
     const candle = candles[index] as Candle;
-    const path = ohlcPath(candle);
+    const path = params.path === "close" ? [candle.open, candle.close] : ohlcPath(candle);
     const points = index === 0 ? path.slice(1) : path[0] === position.lastPrice ? path.slice(1) : path;
     if (points.length === 0) continue;
     const legHours = params.candleHours / points.length;

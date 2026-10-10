@@ -13,6 +13,7 @@ import { loadStrategyBundle } from "./strategy/loader.js";
 import { runDaily } from "./tournament/daily.js";
 import { markForwardBook, summarizeForward } from "./tournament/forward.js";
 import { runBrief3 } from "./tournament/brief3.js";
+import { runH12Stress } from "./tournament/h12stress.js";
 import { runTournament } from "./tournament/run.js";
 import type { PaperBook } from "./types.js";
 
@@ -138,6 +139,15 @@ async function main(): Promise<void> {
       onProgress: (message) => console.log(message),
     });
     console.log(`\nDaily summary: ${dailyPath}`);
+    return;
+  }
+  if (cli.command === "h12-stress") {
+    const path = await runH12Stress({
+      reportsDir: resolve(process.cwd(), "reports"),
+      cacheDir: resolve(process.cwd(), "data/h12"),
+      onProgress: (message) => console.log(message),
+    });
+    console.log(path);
     return;
   }
   if (cli.command === "brief3") {

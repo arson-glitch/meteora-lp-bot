@@ -78,6 +78,16 @@ async function chooseLongSeries(pool: DiscoveredPool, end: number): Promise<Cand
   return daily.candles.length > 0 ? daily : intraday;
 }
 
+/** One Meteora ohlcv window. Empty when the API rejects that timeframe or span. */
+export async function fetchCandleWindow(
+  pool: DiscoveredPool,
+  timeframe: CandleTimeframe,
+  startSec: number,
+  endSec: number,
+): Promise<CandleSeries> {
+  return fetchMeteora(pool, timeframe, startSec, endSec);
+}
+
 async function fetchMeteora(
   pool: DiscoveredPool,
   timeframe: CandleTimeframe,

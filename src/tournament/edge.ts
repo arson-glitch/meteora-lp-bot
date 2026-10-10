@@ -145,14 +145,22 @@ export async function runHighVolEdge(options: {
   return { markdown, tiktok };
 }
 
-export function withCosts(trial: TrialResult, pool: DiscoveredPool, solPriceUsd: number, liquidityBins: number): TrialResult {
+export function withCosts(
+  trial: TrialResult,
+  pool: DiscoveredPool,
+  solPriceUsd: number,
+  liquidityBins: number,
+  costScale = 1,
+): TrialResult {
   const terminal = trial.terminal;
   if (!terminal) return trial;
   const cost = costForTerminal(terminal, pool, solPriceUsd, liquidityBins);
-  const equity = trial.equityUsd - cost.pnlCostUsd;
+  const scale = costScale > 0 ? costScale : 1;
+  const pnlCostUsd = cost.sunkBinArrayUsd + (cost.exitSlippageUsd + cost.txFeeUsd) * scale;
+  const equity = trial.equityUsd - pnlCostUsd;
   const net = equity - trial.depositedUsd;
   const curve = trial.equityCurve?.map((point, index, all) => (
-    index === all.length - 1 ? { t: point.t, equity: point.equity - cost.pnlCostUsd } : point
+    index === all.length - 1 ? { t: point.t, equity: point.equity - pnlCostUsd } : point
   ));
   let maxDrawdownPct = trial.maxDrawdownPct;
   if (curve && curve.length > 0) {
