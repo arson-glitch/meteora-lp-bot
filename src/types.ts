@@ -121,6 +121,8 @@ export interface PaperPosition {
   onOutOfRange: "close" | "rebalance";
   rebalanceEdgeBins: number;
   maxHoldHours: number | null;
+  /** Out-of-range closes wait until the position has been open this long. Stop-loss still fires. */
+  minHoldHours?: number | null;
   /** Null closes on the first out-of-range mark. A positive value waits, in hours. */
   outOfRangeTimeoutHours?: number | null;
   /** When true, recenter stays inside the active bin's array. */

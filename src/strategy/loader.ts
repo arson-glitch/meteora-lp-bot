@@ -2,6 +2,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseStrategy, type StrategyConfig } from "./schema.js";
 
+/**
+ * Loads strategy JSON. `parseStrategy` rejects perps, borrowed leverage,
+ * margin, and borrowing or lending. Spot DLMM inventory is the only product.
+ */
 export function loadStrategies(dir: string): StrategyConfig[] {
   if (!existsSync(dir)) return [];
   const files = readdirSync(dir)

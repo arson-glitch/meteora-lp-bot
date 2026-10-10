@@ -20,6 +20,7 @@
     "frozen-book": "MODE=paper tsx src/index.ts frozen-book",
     "record": "MODE=paper tsx src/recorder/cli.ts record",
     "record:export": "MODE=paper tsx src/recorder/cli.ts export",
+    "brief3": "MODE=paper tsx src/index.ts brief3",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

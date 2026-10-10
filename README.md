@@ -4,6 +4,8 @@ Paper-trading foundation for an automated liquidity provider on [Meteora](https:
 
 DLMM (Dynamic Liquidity Market Maker) is the primary product. DAMM v2 can be listed for discovery and is not executed.
 
+Strategies are spot inventory in a DLMM pool. The loader rejects any strategy file that describes perps, borrowed leverage, margin, futures, options, or borrowing and lending. Hedging with derivatives is out, including a SOL perp hedge. The concentration factor in the LVR formula is not borrowed leverage and is not a strategy.
+
 ## Architecture
 
 ```text

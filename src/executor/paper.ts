@@ -7,7 +7,7 @@ import { estimateLpFeesUsd } from "../math/fees.js";
 import { layoutForStrategy } from "../strategy/sides.js";
 import type { StrategyConfig } from "../strategy/schema.js";
 import type { DiscoveredPool, PaperPosition, SimBin } from "../types.js";
-import { markValueUsd, unrealizedPnlUsd } from "./pnl.js";
+import { inventoryAmounts, markValueUsd, unrealizedPnlUsd } from "./pnl.js";
 
 export interface PositionPlan {
   activeBinId: number;
@@ -111,6 +111,7 @@ export function openPaperPosition(params: {
     onOutOfRange: params.strategy.exit.onOutOfRange,
     rebalanceEdgeBins: params.strategy.exit.rebalanceEdgeBins,
     maxHoldHours: params.strategy.exit.maxHoldHours,
+    minHoldHours: params.strategy.exit.minHoldHours ?? null,
     outOfRangeTimeoutHours: params.strategy.exit.outOfRangeTimeoutHours ?? null,
     stayInBinArray: params.strategy.stayInBinArray === true,
     outOfRangeSince: null,
@@ -214,12 +215,20 @@ export function advancePosition(params: {
     return { position, events };
   }
   const heldHours = (params.nowMs - Date.parse(position.openedAt)) / 3_600_000;
+  const holdLocked = (position.minHoldHours ?? 0) > 0 && heldHours < (position.minHoldHours ?? 0);
   if (position.maxHoldHours !== null && heldHours >= position.maxHoldHours) {
     closePosition(position, params.nowMs, "max-hold");
     events.push({ type: "close", detail: `max hold of ${position.maxHoldHours}h reached` });
     return { position, events };
   }
   if (!nowInRange) {
+    if (holdLocked) {
+      events.push({
+        type: "mark",
+        detail: `out of range during the ${position.minHoldHours}h minimum hold`,
+      });
+      return { position, events };
+    }
     if (position.onOutOfRange === "rebalance") {
       const delay = position.outOfRangeTimeoutHours ?? 0;
       if (delay > 0 && !outOfRangeTimedOut(position, params.nowMs)) {
@@ -309,6 +318,66 @@ function recenter(position: PaperPosition, pool: DiscoveredPool): void {
   position.rebalanceCount += 1;
   position.dynamicPosition = maxBinId - minBinId + 1 > 70;
   if (pool.address !== position.poolAddress) return;
+}
+
+/**
+ * Park the existing tokens on the side that sells the heavy asset.
+ * Does not swap inventory. Returns false when neither token is at least 70% of mark value.
+ */
+export function placeInventoryOnSellSide(position: PaperPosition, bins = 10): boolean {
+  if (position.status !== "open") return false;
+  const { amountX, amountY } = inventoryAmounts(position);
+  const xUsd = amountX * position.priceXUsd;
+  const yUsd = amountY * position.priceYUsd;
+  const total = xUsd + yUsd;
+  if (!(total > 0)) return false;
+  const heavyX = xUsd / total >= 0.7;
+  const heavyY = yUsd / total >= 0.7;
+  if (!heavyX && !heavyY) return false;
+  const count = Math.max(1, Math.round(bins));
+  const active = position.activeBinId;
+  const minBinId = heavyX ? active : active - count;
+  const maxBinId = heavyX ? active + count : active;
+  const sidedness = heavyX ? "single-sided-x" : "single-sided-y";
+  const weights = strategyBinWeights({
+    shape: "BidAsk",
+    sidedness,
+    minBinId,
+    maxBinId,
+    activeBinId: active,
+  });
+  const ask = weights.filter((weight) => weight.side === "ask");
+  const bid = weights.filter((weight) => weight.side === "bid");
+  const xByBin = allocateByWeight(heavyX ? amountX : 0, ask);
+  const yByBin = allocateByWeight(heavyX ? 0 : amountY, bid);
+  position.shape = "BidAsk";
+  position.sidedness = sidedness;
+  position.binsBelow = active - minBinId;
+  position.binsAbove = maxBinId - active;
+  position.minBinId = minBinId;
+  position.maxBinId = maxBinId;
+  position.centeredActiveBinId = active;
+  position.bins = [];
+  for (let binId = minBinId; binId <= maxBinId; binId += 1) {
+    const weight = weights.find((item) => item.binId === binId);
+    let nextX = xByBin.get(binId) ?? 0;
+    let nextY = yByBin.get(binId) ?? 0;
+    if (binId === active) {
+      if (heavyX) nextY += amountY;
+      else nextX += amountX;
+    }
+    position.bins.push({
+      binId,
+      price: priceFromBinId(binId, position.binStep),
+      side: weight?.side ?? "empty",
+      weight: weight?.weight ?? 0,
+      amountX: nextX,
+      amountY: nextY,
+    });
+  }
+  position.rebalanceCount += 1;
+  position.dynamicPosition = maxBinId - minBinId + 1 > 70;
+  return true;
 }
 
 export function closePaperPosition(position: PaperPosition, nowMs: number, reason: string): PaperPosition {

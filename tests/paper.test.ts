@@ -122,6 +122,21 @@ describe("paper executor", () => {
     });
     expect(second.position.feesUsd).toBe(0);
   });
+
+  it("keeps an out-of-range position open until the minimum hold, and still stop-losses", () => {
+    const market = pool({ name: "SOL-USDC", binStep: 100, currentPrice: 100, tvlUsd: 100_000, fees: { "1h": 10 } });
+    const opened = openPaperPosition({
+      pool: market,
+      strategy: strategy({ binsBelow: 2, binsAbove: 2, onOutOfRange: "close", stopLossPct: 0.5, minHoldHours: 24 }),
+      sizeUsd: 1_000,
+      nowMs: now,
+    });
+    const moved = shift(market, opened.activeBinId + 10);
+    const early = advancePosition({ position: opened, pool: moved, nowMs: now + 3_600_000, elapsedHours: 1 });
+    expect(early.position.status).toBe("open");
+    const later = advancePosition({ position: early.position, pool: moved, nowMs: now + 25 * 3_600_000, elapsedHours: 1 });
+    expect(later.position.status).toBe("closed");
+  });
 });
 
 function shift(market: DiscoveredPool, binId: number): DiscoveredPool {
@@ -157,6 +172,7 @@ function strategy(
       stopLossPct: over.stopLossPct ?? 0.2,
       takeProfitPct: null,
       maxHoldHours: over.maxHoldHours === undefined ? 10_000 : over.maxHoldHours,
+      minHoldHours: over.minHoldHours ?? null,
     },
     binsBelow: over.binsBelow,
     binsAbove: over.binsAbove,

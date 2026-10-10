@@ -1,5 +1,6 @@
 import { MAX_BINS_PER_POSITION, MAX_BIN_STEP } from "../constants.js";
 import type { CoinType, QuoteSide, Sidedness, StrategyShape } from "../types.js";
+import { assertNoBorrowedRisk } from "./constraints.js";
 
 /**
  * Strategy files are data. Drop a new JSON file in /strategies and the loader
@@ -57,6 +58,11 @@ export interface StrategyConfig {
     stopLossPct: number;
     takeProfitPct: number | null;
     maxHoldHours: number | null;
+    /**
+     * While the position is younger than this, an out-of-range close is
+     * delayed. Stop-loss and take-profit still fire. Null means no minimum.
+     */
+    minHoldHours?: number | null;
     /** Null or omitted closes as soon as the active bin leaves the range. */
     outOfRangeTimeoutHours?: number | null;
     /** Close when drawdown and a volume collapse happen together. */
@@ -78,6 +84,7 @@ const SHAPES = new Set(["Spot", "Curve", "BidAsk"]);
 const SIDES = new Set(["two-sided", "single-sided-x", "single-sided-y"]);
 
 export function parseStrategy(raw: unknown, filename: string): StrategyConfig {
+  assertNoBorrowedRisk(JSON.stringify(raw ?? {}), filename);
   const row = asRecord(raw, filename);
   const id = requireString(row, "id", filename);
   if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) {
@@ -148,6 +155,9 @@ export function parseStrategy(raw: unknown, filename: string): StrategyConfig {
       maxHoldHours: exit.maxHoldHours === null || exit.maxHoldHours === undefined
         ? null
         : requireNumber(exit, "maxHoldHours", filename),
+      minHoldHours: exit.minHoldHours === null || exit.minHoldHours === undefined
+        ? null
+        : requireNumber(exit, "minHoldHours", filename),
       outOfRangeTimeoutHours,
       ...(exit.compositeExit === true ? { compositeExit: true } : {}),
     },

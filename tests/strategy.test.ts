@@ -110,6 +110,28 @@ describe("strategy rulebook", () => {
     );
     expect(() => loadStrategies(dir)).toThrow(/docs.meteora.ag/);
   });
+
+  it("rejects perps, borrowed leverage, and lending", () => {
+    const dir = mkdtempSync(join(tmpdir(), "strategies-"));
+    writeFileSync(
+      join(dir, "sol-perp-hedge.json"),
+      JSON.stringify({
+        id: "sol-perp-hedge",
+        name: "Short SOL perp",
+        placeholder: true,
+        placeholderNote: "placeholder hedge with perps",
+        docs: ["https://docs.meteora.ag/get-started"],
+        product: "dlmm",
+        shape: "Spot",
+        binsBelow: 1,
+        binsAbove: 1,
+        sidedness: "two-sided",
+        priority: 1,
+        exit: { onOutOfRange: "close", stopLossPct: 0.1 },
+      }),
+    );
+    expect(() => loadStrategies(dir)).toThrow(/spot DLMM only/);
+  });
 });
 
 function market(change: number) {

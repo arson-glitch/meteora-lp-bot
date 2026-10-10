@@ -12,6 +12,7 @@ import { scanPools } from "./scanner/scanner.js";
 import { loadStrategyBundle } from "./strategy/loader.js";
 import { runDaily } from "./tournament/daily.js";
 import { markForwardBook, summarizeForward } from "./tournament/forward.js";
+import { runBrief3 } from "./tournament/brief3.js";
 import { runTournament } from "./tournament/run.js";
 import type { PaperBook } from "./types.js";
 
@@ -137,6 +138,15 @@ async function main(): Promise<void> {
       onProgress: (message) => console.log(message),
     });
     console.log(`\nDaily summary: ${dailyPath}`);
+    return;
+  }
+  if (cli.command === "brief3") {
+    const path = await runBrief3({
+      reportsDir: resolve(process.cwd(), "reports"),
+      cacheDir: resolve(process.cwd(), "data/brief3"),
+      onProgress: (message) => console.log(message),
+    });
+    console.log(path);
     return;
   }
   if (cli.command === "tournament-mark") {
