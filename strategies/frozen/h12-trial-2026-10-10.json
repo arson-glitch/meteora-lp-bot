@@ -1,0 +1,55 @@
+{
+  "version": "2026-10-10",
+  "frozenAt": "2026-10-10T15:20:00.000Z",
+  "status": "trial, not promoted",
+  "sourceStrategyId": "h12-adaptive",
+  "parameterHash": "dcfc7daa72a1e243b8175c861a9ab01f4d69cce7a8b84a32be17b26032ef34e8",
+  "costModelVersion": "2026-10-09",
+  "note": "trial, not promoted. Paper-only forward trial of the pre-registered H12 rule: gamma 0.001, top 20% of fee/TVL over absolute price change on the prior 14 complete daily bars, two-sided Spot, 96-hour out-of-range timeout, 18% stop, $250. The bins in the strategy template are replaced at entry. The hash covers the rule, not a fixed width.",
+  "rule": {
+    "gamma": 0.001,
+    "topFraction": 0.2,
+    "lookbackDays": 14,
+    "sizeUsd": 250,
+    "score": "fee-tvl-over-abs-price-change",
+    "shape": "Spot",
+    "sidedness": "two-sided",
+    "onOutOfRange": "close",
+    "outOfRangeTimeoutHours": 96,
+    "stopLossPct": 0.18,
+    "takeProfitPct": null,
+    "status": "trial, not promoted"
+  },
+  "strategy": {
+    "id": "h12-trial",
+    "name": "H12 trial adaptive Spot",
+    "description": "Paper trial. Two-sided Spot. Width is set at entry from the pre-registered gamma. 96-hour out-of-range timeout and 18% stop.",
+    "placeholder": false,
+    "placeholderNote": "trial, not promoted. Not a tournament winner.",
+    "docs": [
+      "https://docs.meteora.ag/core-products/dlmm/strategies-and-use-cases",
+      "https://docs.meteora.ag/core-products/dlmm/formulas",
+      "https://docs.meteora.ag/core-products/dlmm/what-is-dlmm"
+    ],
+    "notes": "trial, not promoted. Do not treat this file as a promoted strategy.",
+    "product": "dlmm",
+    "shape": "Spot",
+    "binsBelow": 1,
+    "binsAbove": 1,
+    "sidedness": "two-sided",
+    "quoteSide": "two-sided",
+    "coinType": null,
+    "priority": 0,
+    "manualOnly": true,
+    "requires": {},
+    "when": [],
+    "exit": {
+      "onOutOfRange": "close",
+      "rebalanceEdgeBins": 0,
+      "stopLossPct": 0.18,
+      "takeProfitPct": null,
+      "maxHoldHours": null,
+      "outOfRangeTimeoutHours": 96
+    }
+  }
+}

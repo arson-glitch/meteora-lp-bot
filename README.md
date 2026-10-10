@@ -115,7 +115,11 @@ npm run daily
 
 `tournament-mark` advances the forward book against live pool prices. `npm run daily` marks that book, opens the 108-cell grid on one new unscanned coin per bucket, reruns the tournament, opens the frozen high-vol strategy on every newly qualifying high-vol pool, and writes `reports/daily/YYYY-MM-DD.md` with the forward PnL, winner changes, dollars versus simply holding the entry tokens, and the frozen book's liquidation PnL.
 
-`npm run h12-stress` replays the adaptive-width rule on a rolling walk-forward of the discovered universe. It uses free Meteora candles only and writes `reports/h12-stress-YYYY-MM-DD.md`. It does not open a forward book.
+`npm run h12-stress` replays the adaptive-width rule on a rolling walk-forward of the discovered universe. It uses free Meteora candles only and writes `reports/h12-stress-YYYY-MM-DD.md`.
+
+`strategies/frozen/h12-trial-2026-10-10.json` is a paper trial of that rule, labelled trial, not promoted. `npm run daily` marks `data/h12-trial-forward.json` and opens new pools that pass the pre-entry top 20% fee quintile. Each position logs crossed-bin fees, active-bin fees, exit costs, versus cash, and versus holding the token. The width is computed at entry. The file's hash covers the rule.
+
+`npm run validate-fees -- --db /path/to/recorder.sqlite` compares the box recorder's swap fees and per-bin snapshots with the crossed-bin and active-bin models and writes which one is closer.
 
 The promoted high-vol cell is frozen in `strategies/frozen/high-vol-2026-10-09.json`. `loadFrozenStrategy` rejects the file if the parameter hash does not match. Its paper book is `data/frozen-high-vol-forward.json`, separate from the 108-cell book. `npm run high-vol-edge` reprices that cell on the leaderboard's high-vol pools with and without exit costs, and with TVL fee share versus active-bin fee share.
 

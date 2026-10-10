@@ -22,6 +22,7 @@ import {
 } from "./forward.js";
 import { FROZEN_STRATEGY_FILE } from "./frozen.js";
 import { syncFrozenHighVolBook, type FrozenBookStatus } from "./frozenBook.js";
+import { H12_TRIAL_BOOK, H12_TRIAL_FILE, renderH12Trial, syncH12TrialBook, type H12TrialStatus } from "./h12trial.js";
 import { gridStrategies } from "./grid.js";
 import { forwardStrategySnapshot, type ForwardStrategySnapshot, type LeaderStudy } from "./leaderStudy.js";
 import { rugGatePools, type RugHit } from "./rugGate.js";
@@ -37,6 +38,9 @@ export interface DailyOptions {
   poolsPerBucket?: number;
   frozenPath?: string;
   frozenBookPath?: string;
+  h12FrozenPath?: string;
+  h12BookPath?: string;
+  h12CacheDir?: string;
   rug?: RugCheckOptions;
   onProgress?: (message: string) => void;
 }
@@ -101,6 +105,17 @@ export async function runDaily(options: DailyOptions): Promise<string> {
     onProgress: log,
   });
 
+  const h12 = await syncH12TrialBook({
+    path: options.h12BookPath ?? join(process.cwd(), H12_TRIAL_BOOK),
+    frozenPath: options.h12FrozenPath ?? join(process.cwd(), H12_TRIAL_FILE),
+    cacheDir: options.h12CacheDir ?? join(process.cwd(), "data/h12"),
+    universe,
+    nowMs,
+    solPriceUsd: frozen.solPriceUsd,
+    rug: options.rug,
+    onProgress: log,
+  });
+
   const result = await runTournament({
     nowMs,
     sizeUsd,
@@ -137,6 +152,7 @@ export async function runDaily(options: DailyOptions): Promise<string> {
       rugs: rugHits,
       noFresh,
       poolTypes: new Map(appended.book.pools.map((pool) => [pool.address, pool.coinType])),
+      h12,
     }),
   );
   return path;
@@ -194,6 +210,7 @@ function renderDaily(params: {
   rugs: RugHit[];
   noFresh: CoinType[];
   poolTypes: Map<string, string>;
+  h12: H12TrialStatus;
 }): string {
   const lines: string[] = [];
   lines.push(`# Paper daily ${params.generatedAt.slice(0, 10)}`);
@@ -271,6 +288,8 @@ function renderDaily(params: {
   lines.push(renderRugs("New challenger pools", params.rugs));
   lines.push(renderFrozen(params.frozen));
   lines.push(renderRugs("Frozen high-vol opens", params.frozen.rugs));
+  lines.push(renderH12Trial(params.h12));
+  lines.push(renderRugs("H12 trial opens", params.h12.rugs));
   lines.push("");
   return lines.join("\n");
 }

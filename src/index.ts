@@ -14,6 +14,7 @@ import { runDaily } from "./tournament/daily.js";
 import { markForwardBook, summarizeForward } from "./tournament/forward.js";
 import { runBrief3 } from "./tournament/brief3.js";
 import { runH12Stress } from "./tournament/h12stress.js";
+import { validateFeesFile } from "./tournament/validateFees.js";
 import { runTournament } from "./tournament/run.js";
 import type { PaperBook } from "./types.js";
 
@@ -32,6 +33,7 @@ interface Cli {
   poolsPerBucket?: number;
   sizeUsd?: number;
   skipForward: boolean;
+  db?: string;
 }
 
 async function main(): Promise<void> {
@@ -141,6 +143,17 @@ async function main(): Promise<void> {
     console.log(`\nDaily summary: ${dailyPath}`);
     return;
   }
+  if (cli.command === "validate-fees") {
+    if (!cli.db) {
+      console.error("validate-fees needs --db <recorder.sqlite>");
+      process.exitCode = 1;
+      return;
+    }
+    const day = new Date().toISOString().slice(0, 10);
+    const text = validateFeesFile(resolve(cli.db), resolve(process.cwd(), "reports", `validate-fees-${day}.md`));
+    console.log(text);
+    return;
+  }
   if (cli.command === "h12-stress") {
     const path = await runH12Stress({
       reportsDir: resolve(process.cwd(), "reports"),
@@ -232,6 +245,7 @@ function parseArgs(argv: string[]): Cli {
     poolsPerBucket: num("pools-per-bucket"),
     sizeUsd: num("size-usd"),
     skipForward: flags.get("skip-forward") === true,
+    db: typeof flags.get("db") === "string" ? String(flags.get("db")) : undefined,
   };
 }
 
@@ -247,6 +261,8 @@ function helpText(): string {
     "  tournament       Backtest the strategy grid. Creates the forward book only if it is missing",
     "  tournament-mark  Mark the forward paper book against live pools",
     "  daily            Mark forward positions, open new paper trials, rerun the tournament",
+    "  h12-stress       Walk-forward stress test of the adaptive-width rule",
+    "  validate-fees    Compare recorder swaps and bin snapshots with the fee models",
     "  high-vol-edge    Reprice the frozen high-vol strategy with costs and active-bin fees",
     "  frozen-book      Open the frozen strategy on newly qualifying high-vol pools",
     "",
@@ -263,6 +279,7 @@ function helpText(): string {
     "  --pools-per-bucket <n>  Pools replayed per coin type (default 4)",
     "  --size-usd <n>          Simulated deposit per trial (default 250)",
     "  --skip-forward          Skip the forward paper book",
+    "  --db <path>             Recorder sqlite for validate-fees",
     "  --verbose",
     "",
     "Paper mode is the default. No wallet is required.",
