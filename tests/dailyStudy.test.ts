@@ -56,6 +56,23 @@ describe("daily study helpers", () => {
     });
     expect(snapshot.n).toBe(1);
     expect(snapshot.open).toBe(1);
+    const other = pool({
+      name: "OTHER-SOL",
+      address: "other-pool",
+      tokenX: token("OTHER", "other-mint", 1),
+      tokenY: token("SOL", SOL, 100),
+    });
+    const elsewhere = openPaperPosition({ pool: other, strategy, sizeUsd: 250, nowMs: 1 });
+    const typed = forwardStrategySnapshot({
+      positions: [older, fresh, elsewhere],
+      strategyId: strategy.id,
+      pools: new Map([[market.address, market], [other.address, other]]),
+      solPriceUsd: 100,
+      openedAt: new Date(2).toISOString(),
+      coinType: "fresh-memecoin",
+      poolTypes: new Map([[market.address, "fresh-memecoin"], [other.address, "older-memecoin"]]),
+    });
+    expect(typed.n).toBe(1);
   });
 
   it("skips a failing mint and stops once one pool passes", async () => {

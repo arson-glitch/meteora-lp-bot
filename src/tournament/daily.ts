@@ -136,6 +136,7 @@ export async function runDaily(options: DailyOptions): Promise<string> {
       openedAt: new Date(nowMs).toISOString(),
       rugs: rugHits,
       noFresh,
+      poolTypes: new Map(appended.book.pools.map((pool) => [pool.address, pool.coinType])),
     }),
   );
   return path;
@@ -192,6 +193,7 @@ function renderDaily(params: {
   openedAt: string;
   rugs: RugHit[];
   noFresh: CoinType[];
+  poolTypes: Map<string, string>;
 }): string {
   const lines: string[] = [];
   lines.push(`# Paper daily ${params.generatedAt.slice(0, 10)}`);
@@ -298,6 +300,7 @@ function renderLeaders(params: {
   pools: DiscoveredPool[];
   openedAt: string;
   solPriceUsd: number;
+  poolTypes: Map<string, string>;
 }): string {
   const lines: string[] = [];
   const poolMap = new Map(params.pools.map((pool) => [pool.address, pool]));
@@ -343,6 +346,8 @@ function renderLeaders(params: {
       pools: poolMap,
       solPriceUsd: params.solPriceUsd,
       openedAt: params.openedAt,
+      coinType: type,
+      poolTypes: params.poolTypes,
     });
     lines.push(renderForward(forward));
     if (study.net.test.volatileTokenTrials === 0 && study.net.holdout.volatileTokenTrials === 0) {
@@ -359,8 +364,9 @@ function renderLeaders(params: {
 }
 
 function renderForward(forward: ForwardStrategySnapshot): string {
-  if (forward.n === 0) return "Forward paper: no earlier positions use this cell.";
-  return `Forward paper: ${forward.n} positions (${forward.open} open, ${forward.closed} closed). Gross ${usd(forward.grossPnlUsd)}, net ${usd(forward.netPnlUsd)}, slippage ${usd(forward.slippageUsd)}, tx + rent ${usd(forward.txRentUsd)}. Versus cash ${usd(forward.vsCashUsd)} (${forward.beatCash}/${forward.n} ahead of cash). Versus the token ${usd(forward.vsTokenUsd)} (${forward.beatToken}/${forward.n} ahead of the token). Mean net return ${pct(forward.meanReturn)}, 5th percentile ${pct(forward.p5Return)}, worst ${pct(forward.worstReturn)}.`;
+  if (forward.n === 0) return "Forward paper in this bucket: no earlier positions use this cell.";
+  const thin = forward.n < 8 ? ` ${forward.n} positions is too small to treat as a result.` : "";
+  return `Forward paper in this bucket: ${forward.n} positions (${forward.open} open, ${forward.closed} closed). Gross ${usd(forward.grossPnlUsd)}, net ${usd(forward.netPnlUsd)}, slippage ${usd(forward.slippageUsd)}, tx + rent ${usd(forward.txRentUsd)}. Versus cash ${usd(forward.vsCashUsd)} (${forward.beatCash}/${forward.n} ahead of cash). Versus the token ${usd(forward.vsTokenUsd)} (${forward.beatToken}/${forward.n} ahead of the token). Mean net return ${pct(forward.meanReturn)}, 5th percentile ${pct(forward.p5Return)}, worst ${pct(forward.worstReturn)}.${thin}`;
 }
 
 function renderLosses(positions: PaperPosition[], openedAt: string, marked: ForwardStatus | null): string {

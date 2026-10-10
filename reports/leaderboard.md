@@ -1,6 +1,6 @@
 # Strategy tournament leaderboard
 
-Generated 2026-10-09T18:43:25.091Z. Paper only. Deposit size $250 per trial.
+Generated 2026-10-10T07:35:39.398Z. Paper only. Deposit size $250 per trial.
 
 ## How a winner is chosen
 
@@ -20,7 +20,7 @@ Strategies are ranked on train coins only, using the first 70% of each pool's ca
 
 ## Samples
 
-Accepted pools: 145. Skipped: 7.
+Accepted pools: 137. Skipped: 13.
 
 | Bucket | Role | Pool | Bin step | History | Source | Fees |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -30,16 +30,15 @@ Accepted pools: 145. Skipped: 7.
 | stable | holdout | EURC-USDC | 10 | 90d 91 × 24h | meteora | volume-history |
 | stable | train | USDC-USDT | 8 | 90d 91 × 24h | meteora | volume-history |
 | stable | train | USDC-USDT | 16 | 90d 91 × 24h | meteora | volume-history |
-| stable | holdout | EURC-USDC | 1 | 89d 90 × 24h | meteora | volume-history |
 | bluechip | train | SOL-USDC | 4 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | train | JUP-SOL | 80 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | holdout | cbBTC-SOL | 2 | 90d 91 × 24h | meteora | volume-history |
-| bluechip | holdout | PUMP-SOL | 10 | 82d 83 × 24h | meteora | volume-history |
+| bluechip | holdout | PUMP-SOL | 10 | 83d 84 × 24h | meteora | volume-history |
 | bluechip | train | ETH-SOL | 4 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | train | INF-SOL | 1 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | train | WBTC-SOL | 5 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | train | JitoSOL-SOL | 1 | 90d 91 × 24h | meteora | volume-history |
-| bluechip | train | BTC-SOL | 200 | 33d 34 × 24h | meteora | volume-history |
+| bluechip | train | BTC-SOL | 200 | 34d 35 × 24h | meteora | volume-history |
 | bluechip | holdout | mSOL-SOL | 1 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | train | SOL-USDC | 1 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | train | SOL-USDC | 10 | 90d 91 × 24h | meteora | volume-history |
@@ -47,128 +46,121 @@ Accepted pools: 145. Skipped: 7.
 | bluechip | holdout | PUMP-USDC | 20 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | holdout | cbBTC-SOL | 15 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | holdout | PUMP-SOL | 20 | 90d 91 × 24h | meteora | volume-history |
+| bluechip | train | JUP-USDC | 10 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | train | JUP-USDC | 50 | 90d 91 × 24h | meteora | volume-history |
-| bluechip | train | JUP-SOL | 15 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | train | WBTC-USDC | 4 | 90d 91 × 24h | meteora | volume-history |
-| bluechip | train | WBTC-USDC | 16 | 57d 58 × 24h | meteora | volume-history |
+| bluechip | train | WBTC-USDC | 16 | 58d 59 × 24h | meteora | volume-history |
 | bluechip | train | ETH-SOL | 15 | 90d 91 × 24h | meteora | volume-history |
-| bluechip | train | INF-USDC | 100 | 89d 90 × 24h | meteora | volume-history |
 | bluechip | train | USDC-JitoSOL | 80 | 90d 91 × 24h | meteora | volume-history |
-| bluechip | train | INF-hSOL | 10 | 89d 90 × 24h | meteora | volume-history |
+| bluechip | train | INF-USDC | 100 | 90d 91 × 24h | meteora | volume-history |
 | bluechip | train | SOL-ETH | 50 | 90d 91 × 24h | meteora | volume-history |
-| fresh-memecoin | train | TikTok-SOL | 100 | 1d 24 × 1h | meteora | volume-history |
-| fresh-memecoin | train | QI-SOL | 100 | 1d 13 × 1h | meteora | volume-history |
-| fresh-memecoin | holdout | vamp-SOL | 100 | 1d 19 × 1h | meteora | volume-history |
-| fresh-memecoin | holdout | PLAY-USDC | 50 | 1d 21 × 1h | meteora | volume-history |
-| fresh-memecoin | holdout | Animal-SOL | 100 | 1d 21 × 1h | meteora | volume-history |
-| fresh-memecoin | holdout | SWOLF-SOL | 100 | 0d 8 × 1h | meteora | volume-history |
-| fresh-memecoin | train | OP_CAT-USDC | 400 | 1d 19 × 1h | meteora | volume-history |
-| fresh-memecoin | train | DRV-USDC | 2 | 1d 13 × 1h | meteora | volume-history |
-| fresh-memecoin | train | STRK-USDC | 2 | 1d 13 × 1h | meteora | volume-history |
-| fresh-memecoin | train | BEAM-USDC | 2 | 1d 13 × 1h | meteora | volume-history |
-| fresh-memecoin | train | STX-USDC | 2 | 1d 13 × 1h | meteora | volume-history |
-| fresh-memecoin | train | TIA-USDC | 2 | 1d 13 × 1h | meteora | volume-history |
-| fresh-memecoin | train | CARDS-USDC | 2 | 1d 13 × 1h | meteora | volume-history |
-| fresh-memecoin | holdout | PRL-USDC | 2 | 1d 13 × 1h | meteora | volume-history |
-| fresh-memecoin | train | QTC-USDC | 2 | 1d 13 × 1h | meteora | volume-history |
-| fresh-memecoin | train | 0,1-ANSEM | 80 | 1d 16 × 1h | meteora | volume-history |
-| fresh-memecoin | train | GFUD-USDT | 10 | 0d 12 × 1h | meteora | volume-history |
-| fresh-memecoin | train | TikTok-SOL | 20 | 1d 23 × 1h | meteora | volume-history |
-| fresh-memecoin | holdout | PLAY-SOL | 200 | 1d 14 × 1h | meteora | volume-history |
+| bluechip | train | INF-hSOL | 10 | 90d 91 × 24h | meteora | volume-history |
+| fresh-memecoin | train | QI-SOL | 100 | 1d 22 × 1h | meteora | volume-history |
+| fresh-memecoin | train | JPAD-SOL | 125 | 1d 19 × 1h | meteora | volume-history |
+| fresh-memecoin | holdout | SWOLF-SOL | 100 | 1d 21 × 1h | meteora | volume-history |
+| fresh-memecoin | holdout | MEMECHAN-SOL | 125 | 1d 19 × 1h | meteora | volume-history |
+| fresh-memecoin | train | PAWS-SOL | 125 | 1d 16 × 1h | meteora | volume-history |
+| fresh-memecoin | holdout | QUBIT-SOL | 100 | 0d 12 × 1h | meteora | volume-history |
+| fresh-memecoin | train | KAIA-USDC | 2 | 0d 9 × 1h | meteora | volume-history |
+| fresh-memecoin | train | MON-USDC | 2 | 0d 9 × 1h | meteora | volume-history |
+| fresh-memecoin | train | ZIL-USDC | 2 | 0d 9 × 1h | meteora | volume-history |
+| fresh-memecoin | holdout | BERA-USDC | 2 | 0d 9 × 1h | meteora | volume-history |
+| fresh-memecoin | train | ROSE-USDC | 2 | 0d 9 × 1h | meteora | volume-history |
+| fresh-memecoin | train | CFX-USDC | 2 | 0d 9 × 1h | meteora | volume-history |
+| fresh-memecoin | train | JCT-USDC | 2 | 0d 9 × 1h | meteora | volume-history |
+| fresh-memecoin | train | PEAQ-USDC | 2 | 0d 9 × 1h | meteora | volume-history |
+| fresh-memecoin | train | QI-USDC | 80 | 1d 13 × 1h | meteora | volume-history |
 | high-vol-trending | holdout | STRK-SOL | 80 | 90d 91 × 24h | meteora | volume-history |
-| high-vol-trending | train | HOOKED-SOL | 50 | 11d 66 × 4h | meteora | volume-history |
-| high-vol-trending | train | PQC-SOL | 100 | 2d 11 × 4h | meteora | volume-history |
-| high-vol-trending | train | HeeHaw-SOL | 100 | 39d 40 × 24h | meteora | volume-history |
+| high-vol-trending | holdout | SPCX-SOL | 10 | 90d 91 × 24h | meteora | volume-history |
+| high-vol-trending | train | PQC-SOL | 100 | 2d 14 × 4h | meteora | volume-history |
 | high-vol-trending | train | MUSK-USDC | 100 | 90d 91 × 24h | meteora | volume-history |
-| high-vol-trending | train | baton-SOL | 80 | 29d 30 × 24h | meteora | volume-history |
-| high-vol-trending | train | Agency-SOL | 50 | 6d 37 × 4h | meteora | volume-history |
-| high-vol-trending | train | JEANPHIL-SOL | 100 | 16d 97 × 4h | meteora | volume-history |
-| high-vol-trending | train | BORDR-SOL | 100 | 2d 11 × 4h | meteora | volume-history |
-| high-vol-trending | holdout | SKHY-USDC | 80 | 90d 91 × 24h | meteora | volume-history |
-| high-vol-trending | holdout | RACE-USDC | 10 | 3d 18 × 4h | meteora | volume-history |
-| high-vol-trending | holdout | MASK-SOL | 200 | 14d 84 × 4h | meteora | volume-history |
-| high-vol-trending | train | INJ-USDC | 15 | 22d 23 × 24h | meteora | volume-history |
-| high-vol-trending | train | HIGGS-SOL | 100 | 5d 32 × 4h | meteora | volume-history |
-| high-vol-trending | train | CLAUDIA-SOL | 125 | 3d 17 × 4h | meteora | volume-history |
-| high-vol-trending | train | RARI-SOL | 80 | 3d 18 × 4h | meteora | volume-history |
-| high-vol-trending | train | fone-SOL | 20 | 43d 44 × 24h | meteora | volume-history |
-| high-vol-trending | holdout | OTC-SOL | 100 | 2d 14 × 4h | meteora | volume-history |
+| high-vol-trending | train | HeeHaw-SOL | 100 | 40d 41 × 24h | meteora | volume-history |
+| high-vol-trending | train | BORDR-SOL | 100 | 2d 14 × 4h | meteora | volume-history |
+| high-vol-trending | train | CLAUDIA-SOL | 125 | 3d 20 × 4h | meteora | volume-history |
+| high-vol-trending | train | HOTBOT-SOL | 100 | 8d 49 × 4h | meteora | volume-history |
+| high-vol-trending | train | CRAWL-SOL | 100 | 6d 39 × 4h | meteora | volume-history |
+| high-vol-trending | holdout | TWEETCRAFT-SOL | 100 | 3d 20 × 4h | meteora | volume-history |
+| high-vol-trending | holdout | RACE-USDC | 10 | 3d 21 × 4h | meteora | volume-history |
+| high-vol-trending | train | HIGGS-SOL | 100 | 6d 35 × 4h | meteora | volume-history |
+| high-vol-trending | train | CALI-SOL | 100 | 16d 97 × 4h | meteora | volume-history |
+| high-vol-trending | train | INJ-USDC | 15 | 23d 24 × 24h | meteora | volume-history |
+| high-vol-trending | holdout | PLAY-USDC | 50 | 1d 34 × 1h | meteora | volume-history |
+| high-vol-trending | train | NINJACAT-SOL | 200 | 23d 24 × 24h | meteora | volume-history |
+| high-vol-trending | train | ALLINU-SOL | 50 | 29d 30 × 24h | meteora | volume-history |
+| high-vol-trending | train | pill-SOL | 200 | 27d 28 × 24h | meteora | volume-history |
 | high-vol-trending | holdout | STRK-USDC | 100 | 90d 91 × 24h | meteora | volume-history |
-| high-vol-trending | train | baton-SOL | 50 | 25d 26 × 24h | meteora | volume-history |
-| high-vol-trending | train | HOOKED-SOL | 30 | 7d 42 × 4h | meteora | volume-history |
-| high-vol-trending | train | Agency-SOL | 100 | 7d 45 × 4h | meteora | volume-history |
-| high-vol-trending | train | RARI-SOL | 125 | 3d 19 × 4h | meteora | volume-history |
-| high-vol-trending | train | HeeHaw-USDC | 80 | 39d 40 × 24h | meteora | volume-history |
-| high-vol-trending | train | BORDR-USDC | 80 | 2d 11 × 4h | meteora | volume-history |
-| high-vol-trending | holdout | RACE-USDC | 8 | 3d 18 × 4h | meteora | volume-history |
-| high-vol-trending | train | fone-SOL | 100 | 43d 44 × 24h | meteora | volume-history |
-| high-vol-trending | train | JEANPHIL-USDC | 50 | 16d 97 × 4h | meteora | volume-history |
-| high-vol-trending | train | INJ-SOL | 50 | 11d 67 × 4h | meteora | volume-history |
-| high-vol-trending | holdout | OTC-USDC | 125 | 33d 34 × 24h | meteora | volume-history |
-| high-vol-trending | holdout | MASK-SOL | 20 | 13d 78 × 4h | meteora | volume-history |
-| high-vol-trending | train | PQC-SOL | 125 | 1d 27 × 1h | meteora | volume-history |
-| established-midcap | train | STONK-SOL | 20 | 58d 59 × 24h | meteora | volume-history |
+| high-vol-trending | holdout | SPCX-USDC | 75 | 90d 91 × 24h | meteora | volume-history |
+| high-vol-trending | holdout | RACE-SOL | 20 | 4d 22 × 4h | meteora | volume-history |
+| high-vol-trending | train | BORDR-USDC | 80 | 2d 14 × 4h | meteora | volume-history |
+| high-vol-trending | train | CRAWL-SOL | 80 | 6d 37 × 4h | meteora | volume-history |
+| high-vol-trending | train | PQC-USDC | 50 | 1d 28 × 1h | meteora | volume-history |
+| high-vol-trending | train | ALLINU-SOL | 100 | 29d 30 × 24h | meteora | volume-history |
+| high-vol-trending | train | INJ-SOL | 50 | 12d 70 × 4h | meteora | volume-history |
+| high-vol-trending | train | pill-baton | 400 | 4d 24 × 4h | meteora | volume-history |
+| high-vol-trending | holdout | PLAY-SOL | 200 | 1d 27 × 1h | meteora | volume-history |
+| high-vol-trending | train | NINJACAT-SOL | 160 | 21d 22 × 24h | meteora | volume-history |
 | established-midcap | train | BP-USDC | 50 | 90d 91 × 24h | meteora | volume-history |
-| established-midcap | holdout | MET-SOL | 20 | 90d 91 × 24h | meteora | volume-history |
+| established-midcap | train | STONK-SOL | 20 | 59d 60 × 24h | meteora | volume-history |
 | established-midcap | train | SOL-HYPE | 4 | 90d 91 × 24h | meteora | volume-history |
+| established-midcap | holdout | MET-SOL | 20 | 90d 91 × 24h | meteora | volume-history |
 | established-midcap | train | TRUMP-USDC | 10 | 90d 91 × 24h | meteora | volume-history |
-| established-midcap | train | SI-SOL | 100 | 16d 97 × 4h | meteora | volume-history |
-| established-midcap | train | CARDS-USDC | 20 | 90d 91 × 24h | meteora | volume-history |
 | established-midcap | train | ANTFUN-USDT | 16 | 90d 91 × 24h | meteora | volume-history |
+| established-midcap | train | SI-SOL | 30 | 11d 64 × 4h | meteora | volume-history |
+| established-midcap | train | CARDS-USDC | 20 | 90d 91 × 24h | meteora | volume-history |
 | established-midcap | train | ANSEM-SOL | 20 | 90d 91 × 24h | meteora | volume-history |
-| established-midcap | train | ZCAT-SOL | 80 | 33d 34 × 24h | meteora | volume-history |
-| established-midcap | train | ZEC-SOL | 15 | 49d 50 × 24h | meteora | volume-history |
+| established-midcap | train | PENGU-USDC | 25 | 90d 91 × 24h | meteora | volume-history |
+| established-midcap | holdout | GOOGLx-SOL | 20 | 81d 82 × 24h | meteora | volume-history |
+| established-midcap | holdout | MASK-SOL | 200 | 14d 87 × 4h | meteora | volume-history |
+| established-midcap | train | ZEC-SOL | 15 | 50d 51 × 24h | meteora | volume-history |
 | established-midcap | holdout | ORE-SOL | 20 | 90d 91 × 24h | meteora | volume-history |
 | established-midcap | holdout | NVDAx-SOL | 20 | 90d 91 × 24h | meteora | volume-history |
-| established-midcap | holdout | GOOGLx-SOL | 20 | 80d 81 × 24h | meteora | volume-history |
-| established-midcap | train | PENGU-USDC | 25 | 90d 91 × 24h | meteora | volume-history |
-| established-midcap | train | CATE-SOL | 50 | 74d 75 × 24h | meteora | volume-history |
+| established-midcap | train | ZCAT-SOL | 80 | 34d 35 × 24h | meteora | volume-history |
 | established-midcap | train | Bonk-USDC | 80 | 90d 91 × 24h | meteora | volume-history |
-| established-midcap | holdout | FO-USDT | 10 | 90d 91 × 24h | meteora | volume-history |
-| established-midcap | train | SI-SOL | 30 | 10d 61 × 4h | meteora | volume-history |
-| established-midcap | holdout | MET-SOL | 4 | 90d 91 × 24h | meteora | volume-history |
+| established-midcap | train | USELESS-SOL | 20 | 90d 91 × 24h | meteora | volume-history |
 | established-midcap | train | HYPE-SOL | 20 | 90d 91 × 24h | meteora | volume-history |
-| established-midcap | train | STONK-USDC | 8 | 21d 22 × 24h | meteora | volume-history |
-| established-midcap | train | BP-SOL | 20 | 32d 33 × 24h | meteora | volume-history |
+| established-midcap | holdout | MET-SOL | 4 | 90d 91 × 24h | meteora | volume-history |
+| established-midcap | train | SI-SOL | 100 | 16d 97 × 4h | meteora | volume-history |
+| established-midcap | train | STONK-USDC | 8 | 22d 23 × 24h | meteora | volume-history |
+| established-midcap | train | BP-SOL | 20 | 33d 34 × 24h | meteora | volume-history |
 | established-midcap | train | TRUMP-USDC | 50 | 90d 91 × 24h | meteora | volume-history |
-| established-midcap | train | CATE-USDC | 20 | 68d 69 × 24h | meteora | volume-history |
 | established-midcap | train | ZEC-USDC | 20 | 90d 91 × 24h | meteora | volume-history |
 | established-midcap | train | CARDS-SOL | 100 | 90d 91 × 24h | meteora | volume-history |
 | established-midcap | holdout | ORE-USDC | 50 | 90d 91 × 24h | meteora | volume-history |
-| established-midcap | train | ZCAT-USDC | 20 | 32d 33 × 24h | meteora | volume-history |
-| established-midcap | train | Bonk-SOL | 100 | 90d 91 × 24h | meteora | volume-history |
+| established-midcap | train | ZCAT-USDC | 20 | 33d 34 × 24h | meteora | volume-history |
+| established-midcap | holdout | MASK-SOL | 20 | 13d 81 × 4h | meteora | volume-history |
 | established-midcap | train | PENGU-SOL | 20 | 90d 91 × 24h | meteora | volume-history |
-| established-midcap | train | ANSEM-SOL | 10 | 90d 91 × 24h | meteora | volume-history |
+| established-midcap | train | Bonk-SOL | 100 | 90d 91 × 24h | meteora | volume-history |
 | older-memecoin | train | wNEAR-USDC | 20 | 90d 91 × 24h | meteora | volume-history |
-| older-memecoin | holdout | SPCX-USDC | 10 | 90d 91 × 24h | meteora | volume-history |
-| older-memecoin | train | DARK-SOL | 75 | 3d 18 × 4h | meteora | volume-history |
-| older-memecoin | holdout | ANTHROPIC-SOL | 80 | 90d 91 × 24h | meteora | volume-history |
+| older-memecoin | train | HOOKED-SOL | 50 | 11d 69 × 4h | meteora | volume-history |
+| older-memecoin | train | DARK-SOL | 75 | 3d 21 × 4h | meteora | volume-history |
 | older-memecoin | train | MU-USDC | 20 | 90d 91 × 24h | meteora | volume-history |
-| older-memecoin | holdout | XMR-USDC | 10 | 29d 30 × 24h | meteora | volume-history |
-| older-memecoin | train | TWEETCRAFT-SOL | 100 | 3d 17 × 4h | meteora | volume-history |
-| older-memecoin | train | swordcat-SOL | 100 | 11d 69 × 4h | meteora | volume-history |
-| older-memecoin | train | ENA-USDC | 100 | 87d 88 × 24h | meteora | volume-history |
-| older-memecoin | train | NINJACAT-SOL | 200 | 22d 23 × 24h | meteora | volume-history |
-| older-memecoin | train | e/acc-SOL | 50 | 14d 83 × 4h | meteora | volume-history |
-| older-memecoin | train | CRAWL-SOL | 100 | 6d 36 × 4h | meteora | volume-history |
-| older-memecoin | train | EMBER-SOL | 50 | 27d 28 × 24h | meteora | volume-history |
+| older-memecoin | holdout | ANTHROPIC-SOL | 80 | 90d 91 × 24h | meteora | volume-history |
+| older-memecoin | train | JEANPHIL-SOL | 100 | 20d 21 × 24h | meteora | volume-history |
+| older-memecoin | train | Agency-SOL | 50 | 7d 40 × 4h | meteora | volume-history |
+| older-memecoin | train | baton-SOL | 80 | 30d 31 × 24h | meteora | volume-history |
+| older-memecoin | holdout | SKHY-USDC | 80 | 90d 91 × 24h | meteora | volume-history |
+| older-memecoin | train | PAID-SOL | 30 | 22d 23 × 24h | meteora | volume-history |
+| older-memecoin | holdout | PEPE-SOL | 20 | 22d 23 × 24h | meteora | volume-history |
+| older-memecoin | train | ENA-USDC | 100 | 88d 89 × 24h | meteora | volume-history |
+| older-memecoin | train | swordcat-SOL | 100 | 12d 72 × 4h | meteora | volume-history |
+| older-memecoin | holdout | XMR-USDC | 10 | 30d 31 × 24h | meteora | volume-history |
+| older-memecoin | train | EMBER-SOL | 50 | 28d 29 × 24h | meteora | volume-history |
+| older-memecoin | train | e/acc-SOL | 50 | 14d 86 × 4h | meteora | volume-history |
 | older-memecoin | holdout | tSpaceX-USDC | 80 | 90d 91 × 24h | meteora | volume-history |
-| older-memecoin | holdout | PEPE-SOL | 20 | 21d 22 × 24h | meteora | volume-history |
-| older-memecoin | train | PAID-SOL | 30 | 21d 22 × 24h | meteora | volume-history |
-| older-memecoin | train | HOTBOT-SOL | 100 | 8d 46 × 4h | meteora | volume-history |
-| older-memecoin | train | CALI-SOL | 100 | 16d 97 × 4h | meteora | volume-history |
-| older-memecoin | holdout | ANTHROPIC-USDC | 15 | 58d 59 × 24h | meteora | volume-history |
-| older-memecoin | train | DARK-SOL | 50 | 7d 45 × 4h | meteora | volume-history |
-| older-memecoin | train | e/acc-SOL | 200 | 14d 83 × 4h | meteora | volume-history |
-| older-memecoin | holdout | XMR-SOL | 20 | 31d 32 × 24h | meteora | volume-history |
-| older-memecoin | holdout | SPCX-USDC | 75 | 90d 91 × 24h | meteora | volume-history |
-| older-memecoin | train | MU-USDC | 50 | 90d 91 × 24h | meteora | volume-history |
+| older-memecoin | train | Jimothy-SOL | 50 | 85d 86 × 24h | meteora | volume-history |
+| older-memecoin | train | baton-SOL | 50 | 26d 27 × 24h | meteora | volume-history |
+| older-memecoin | holdout | ANTHROPIC-USDC | 15 | 59d 60 × 24h | meteora | volume-history |
+| older-memecoin | train | HOOKED-SOL | 30 | 7d 45 × 4h | meteora | volume-history |
+| older-memecoin | train | Agency-SOL | 100 | 8d 48 × 4h | meteora | volume-history |
+| older-memecoin | train | DARK-SOL | 50 | 8d 48 × 4h | meteora | volume-history |
+| older-memecoin | train | e/acc-SOL | 200 | 14d 86 × 4h | meteora | volume-history |
 | older-memecoin | holdout | PEPE-SOL | 10 | 16d 97 × 4h | meteora | volume-history |
-| older-memecoin | train | CRAWL-SOL | 80 | 6d 34 × 4h | meteora | volume-history |
-| older-memecoin | train | NINJACAT-SOL | 160 | 16d 97 × 4h | meteora | volume-history |
-| older-memecoin | train | swordcat-USDC | 80 | 7d 41 × 4h | meteora | volume-history |
-| older-memecoin | train | PAID-SOL | 100 | 24d 25 × 24h | meteora | volume-history |
-| older-memecoin | train | EMBER-SOL | 100 | 28d 29 × 24h | meteora | volume-history |
+| older-memecoin | holdout | XMR-SOL | 20 | 32d 33 × 24h | meteora | volume-history |
+| older-memecoin | train | PAID-SOL | 80 | 25d 26 × 24h | meteora | volume-history |
+| older-memecoin | train | JEANPHIL-SOL | 50 | 2d 13 × 4h | meteora | volume-history |
+| older-memecoin | train | MU-USDC | 50 | 90d 91 × 24h | meteora | volume-history |
+| older-memecoin | train | EMBER-USDC | 200 | 31d 32 × 24h | meteora | volume-history |
+| older-memecoin | train | swordcat-USDC | 80 | 7d 44 × 4h | meteora | volume-history |
 
 ## stable
 
@@ -176,112 +168,112 @@ No strategy has 8 or more train trials, so nothing is promoted.
 
 | Rank | Strategy | Train n | Train median | Time-test median | Holdout n | Holdout median | Holdout vs hold | Promoted |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| — | `grid-bidask-wide-two-timeout` | 5 | 0.13% | 0.07% | 2 | -0.31% | $0.86 |  |
-| — | `grid-bidask-medium-two-timeout` | 5 | 0.13% | 0.07% | 2 | 0.30% | $2.38 |  |
-| — | `grid-spot-wide-two-timeout` | 5 | 0.13% | 0.07% | 2 | -0.41% | $0.61 |  |
-| — | `grid-curve-wide-two-timeout` | 5 | 0.13% | 0.07% | 2 | -0.51% | $0.35 |  |
-| — | `grid-spot-medium-two-timeout` | 5 | 0.13% | 0.07% | 2 | 0.25% | $2.25 |  |
-| — | `grid-curve-medium-two-timeout` | 5 | 0.13% | 0.07% | 2 | 0.20% | $2.13 |  |
-| — | `grid-bidask-wide-quote-rebalance` | 5 | 0.11% | 0.06% | 2 | -3.12% | $-7.79 |  |
-| — | `grid-bidask-wide-two-rebalance` | 5 | 0.10% | 0.07% | 2 | -4.13% | $-8.69 |  |
-| — | `grid-bidask-wide-two-oor` | 5 | 0.10% | 0.07% | 2 | 0.64% | $3.24 |  |
-| — | `grid-bidask-wide-two-tp` | 5 | 0.10% | 0.07% | 2 | 0.64% | $3.24 |  |
+| — | `grid-bidask-wide-two-oor` | 5 | 0.12% | 0.07% | 1 | 1.18% | $5.31 |  |
+| — | `grid-bidask-wide-two-rebalance` | 5 | 0.12% | 0.07% | 1 | -3.63% | $-6.71 |  |
+| — | `grid-bidask-wide-two-timeout` | 5 | 0.12% | 0.07% | 1 | -0.65% | $0.73 |  |
+| — | `grid-bidask-wide-two-tp` | 5 | 0.12% | 0.07% | 1 | 1.18% | $5.31 |  |
+| — | `grid-spot-wide-two-oor` | 5 | 0.12% | 0.06% | 1 | 0.94% | $4.69 |  |
+| — | `grid-spot-wide-two-rebalance` | 5 | 0.12% | 0.06% | 1 | -4.81% | $-9.68 |  |
+| — | `grid-spot-wide-two-timeout` | 5 | 0.12% | 0.07% | 1 | -0.82% | $0.30 |  |
+| — | `grid-spot-wide-two-tp` | 5 | 0.12% | 0.06% | 1 | 0.94% | $4.69 |  |
+| — | `grid-curve-wide-two-oor` | 5 | 0.12% | 0.06% | 1 | 0.69% | $4.08 |  |
+| — | `grid-curve-wide-two-rebalance` | 5 | 0.12% | 0.06% | 1 | -5.99% | $-12.62 |  |
 
-Top train row vs holding: train $0.42, time-split $0.29, holdout $0.86 (mean dollars versus buying and holding the entry tokens).
+Top train row vs holding: train $0.38, time-split $0.08, holdout $5.31 (mean dollars versus buying and holding the entry tokens).
 
 ## bluechip
 
-grid-bidask-wide-two-tp passed the time split (median 0.06%, mean 0.95%) but the cross-coin holdout did not clear n≥4 with a positive median (0.22%) and mean (-0.33%), so it is not promoted.
+grid-bidask-medium-two-oor led the time-split test among the top 5 train strategies, but the test median (-0.13%) and mean (-0.78%) are not both positive, so it is not promoted.
 
 | Rank | Strategy | Train n | Train median | Time-test median | Holdout n | Holdout median | Holdout vs hold | Promoted |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `grid-bidask-wide-two-tp` | 18 | 0.16% | 0.06% | 7 | 0.22% | $-96.57 |  |
-| 2 | `grid-bidask-medium-two-oor` | 18 | 0.15% | -0.08% | 7 | 0.05% | $-97.65 |  |
-| 3 | `grid-bidask-medium-two-tp` | 18 | 0.15% | -0.08% | 7 | 0.05% | $-97.65 |  |
-| 4 | `grid-bidask-wide-two-oor` | 18 | 0.14% | -0.50% | 7 | 0.22% | $-96.57 |  |
-| 5 | `grid-spot-medium-two-oor` | 18 | 0.13% | -0.09% | 7 | 0.05% | $-97.90 |  |
-| 6 | `grid-spot-medium-two-tp` | 18 | 0.13% | -0.09% | 7 | 0.05% | $-97.90 |  |
-| 7 | `grid-spot-wide-two-tp` | 18 | 0.11% | 0.05% | 7 | 0.18% | $-97.20 |  |
-| 8 | `grid-spot-wide-two-oor` | 18 | 0.11% | -0.51% | 7 | 0.18% | $-97.20 |  |
-| 9 | `grid-curve-medium-two-oor` | 18 | 0.10% | -0.59% | 7 | 0.04% | $-98.14 |  |
-| 10 | `grid-curve-medium-two-tp` | 18 | 0.10% | -0.10% | 7 | 0.04% | $-98.14 |  |
+| 1 | `grid-bidask-wide-two-tp` | 18 | 0.14% | -0.18% | 7 | 1.04% | $-105.85 |  |
+| 2 | `grid-spot-wide-two-tp` | 18 | 0.11% | -0.23% | 7 | 0.79% | $-106.48 |  |
+| 3 | `grid-bidask-medium-two-timeout` | 18 | 0.06% | -1.01% | 7 | 0.43% | $-107.11 |  |
+| 4 | `grid-bidask-medium-two-oor` | 18 | 0.06% | -0.13% | 7 | 0.43% | $-106.39 |  |
+| 5 | `grid-bidask-medium-two-tp` | 18 | 0.06% | -0.13% | 7 | 0.43% | $-106.39 |  |
+| 6 | `grid-spot-medium-two-timeout` | 18 | 0.05% | -1.11% | 7 | 0.34% | $-107.35 |  |
+| 7 | `grid-spot-medium-two-oor` | 18 | 0.05% | -0.15% | 7 | 0.34% | $-106.63 |  |
+| 8 | `grid-spot-medium-two-tp` | 18 | 0.05% | -0.15% | 7 | 0.34% | $-106.63 |  |
+| 9 | `grid-curve-medium-two-timeout` | 18 | 0.04% | -1.21% | 7 | 0.24% | $-107.59 |  |
+| 10 | `grid-curve-medium-two-oor` | 18 | 0.04% | -0.18% | 7 | 0.24% | $-106.87 |  |
 
-Top train row vs holding: train $-7.49, time-split $-5.20, holdout $-96.57 (mean dollars versus buying and holding the entry tokens).
+Top train row vs holding: train $-9.43, time-split $-7.98, holdout $-105.85 (mean dollars versus buying and holding the entry tokens).
 
 ## fresh-memecoin
 
-grid-bidask-wide-quote-oor led the time-split test among the top 5 train strategies, but the test median (0.00%) and mean (-0.61%) are not both positive, so it is not promoted.
+grid-bidask-narrow-two-oor led the time-split test among the top 5 train strategies, but the test median (0.00%) and mean (-5.07%) are not both positive, so it is not promoted.
 
 | Rank | Strategy | Train n | Train median | Time-test median | Holdout n | Holdout median | Holdout vs hold | Promoted |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `grid-spot-wide-two-oor` | 13 | 0.01% | 0.00% | 6 | -28.20% | $-103.44 |  |
-| 2 | `grid-spot-wide-two-tp` | 13 | 0.01% | 0.00% | 6 | -5.58% | $-69.03 |  |
-| 3 | `grid-bidask-wide-quote-tp` | 13 | 0.01% | 0.00% | 6 | 1.21% | $-10.31 |  |
-| 4 | `grid-bidask-wide-quote-oor` | 13 | 0.01% | 0.00% | 6 | 1.21% | $-10.31 |  |
-| 5 | `grid-bidask-wide-two-oor` | 13 | 0.01% | 0.00% | 6 | -25.44% | $-99.14 |  |
-| 6 | `grid-bidask-wide-two-tp` | 13 | 0.01% | 0.00% | 6 | -4.87% | $-65.63 |  |
-| 7 | `grid-curve-wide-two-oor` | 13 | 0.01% | 0.00% | 6 | -23.29% | $-101.36 |  |
-| 8 | `grid-curve-wide-two-tp` | 13 | 0.01% | 0.00% | 6 | -6.29% | $-72.42 |  |
-| 9 | `grid-bidask-medium-quote-oor` | 13 | 0.01% | 0.00% | 6 | 1.20% | $-11.93 |  |
-| 10 | `grid-bidask-medium-quote-tp` | 13 | 0.01% | 0.00% | 6 | 1.20% | $-11.93 |  |
+| 1 | `grid-bidask-narrow-two-tp` | 11 | 0.01% | 0.00% | 4 | 0.82% | $-20.14 |  |
+| 2 | `grid-spot-narrow-two-tp` | 11 | 0.01% | 0.00% | 4 | 0.77% | $-20.36 |  |
+| 3 | `grid-curve-narrow-two-tp` | 11 | 0.01% | 0.00% | 4 | 0.73% | $-20.57 |  |
+| 4 | `grid-bidask-narrow-two-oor` | 11 | 0.01% | 0.00% | 4 | 0.82% | $-20.14 |  |
+| 5 | `grid-spot-narrow-two-oor` | 11 | 0.01% | 0.00% | 4 | 0.77% | $-20.36 |  |
+| 6 | `grid-curve-narrow-two-oor` | 11 | 0.01% | 0.00% | 4 | 0.73% | $-20.57 |  |
+| 7 | `grid-spot-medium-quote-timeout` | 11 | 0.01% | 0.00% | 4 | -12.31% | $56.05 |  |
+| 8 | `grid-spot-wide-token-timeout` | 11 | 0.01% | 0.00% | 4 | -27.03% | $-92.25 |  |
+| 9 | `grid-spot-wide-two-timeout` | 11 | 0.01% | 0.00% | 4 | -12.85% | $68.31 |  |
+| 10 | `grid-spot-wide-two-oor` | 11 | 0.01% | 0.00% | 4 | -12.85% | $8.91 |  |
 
-Top train row vs holding: train $4.91, time-split $-12.73, holdout $-103.44 (mean dollars versus buying and holding the entry tokens).
+Top train row vs holding: train $-13.04, time-split $-9.30, holdout $-20.14 (mean dollars versus buying and holding the entry tokens).
 
 ## high-vol-trending
 
-grid-bidask-wide-quote-tp is promoted: train rank 3, time-split n=23 median 0.35%, holdout n=9 median 0.28%.
+grid-bidask-narrow-two-oor passed the time split (median 1.19%, mean 4.86%) but the cross-coin holdout did not clear n≥4 with a positive median (-2.18%) and mean (-7.19%), so it is not promoted.
 
 | Rank | Strategy | Train n | Train median | Time-test median | Holdout n | Holdout median | Holdout vs hold | Promoted |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `grid-bidask-wide-quote-timeout` | 23 | 0.78% | 0.01% | 9 | 4.72% | $18.46 |  |
-| 2 | `grid-bidask-wide-quote-oor` | 23 | 0.31% | 0.35% | 9 | 0.28% | $4.34 |  |
-| 3 | `grid-bidask-wide-quote-tp` | 23 | 0.31% | 0.35% | 9 | 0.28% | $4.34 | yes |
-| 4 | `grid-spot-wide-quote-oor` | 23 | 0.30% | 0.35% | 9 | 0.28% | $4.28 |  |
-| 5 | `grid-spot-wide-quote-tp` | 23 | 0.30% | 0.35% | 9 | 0.28% | $4.28 |  |
-| 6 | `grid-curve-wide-quote-oor` | 23 | 0.07% | 0.35% | 9 | 0.28% | $4.23 |  |
-| 7 | `grid-curve-wide-quote-tp` | 23 | 0.07% | 0.27% | 9 | 0.28% | $4.23 |  |
-| 8 | `grid-spot-medium-quote-oor` | 23 | 0.00% | 0.27% | 9 | 0.28% | $4.21 |  |
-| 9 | `grid-bidask-medium-quote-oor` | 23 | 0.00% | 0.27% | 9 | 0.28% | $4.26 |  |
-| 10 | `grid-bidask-medium-quote-tp` | 23 | 0.00% | 0.27% | 9 | 0.28% | $4.26 |  |
+| 1 | `grid-bidask-narrow-two-oor` | 20 | 0.47% | 1.19% | 9 | -2.18% | $-29.93 |  |
+| 2 | `grid-bidask-narrow-two-tp` | 20 | 0.47% | 1.19% | 9 | -2.18% | $-32.64 |  |
+| 3 | `grid-spot-narrow-two-oor` | 20 | 0.45% | 1.11% | 9 | -2.34% | $-30.17 |  |
+| 4 | `grid-spot-narrow-two-tp` | 20 | 0.45% | 1.11% | 9 | -2.34% | $-32.86 |  |
+| 5 | `grid-curve-narrow-two-oor` | 20 | 0.42% | 1.02% | 9 | -2.51% | $-30.41 |  |
+| 6 | `grid-curve-narrow-two-tp` | 20 | 0.42% | 1.02% | 9 | -2.51% | $-33.08 |  |
+| 7 | `grid-bidask-wide-quote-oor` | 20 | 0.17% | 0.43% | 9 | 0.00% | $-5.83 |  |
+| 8 | `grid-bidask-wide-quote-tp` | 20 | 0.17% | 0.33% | 9 | 0.00% | $-8.35 |  |
+| 9 | `grid-spot-wide-quote-oor` | 20 | 0.11% | 0.33% | 9 | 0.00% | $-7.55 |  |
+| 10 | `grid-spot-wide-quote-tp` | 20 | 0.11% | 0.33% | 9 | 0.00% | $-8.47 |  |
 
-Top train row vs holding: train $-7.18, time-split $116.22, holdout $18.46 (mean dollars versus buying and holding the entry tokens).
+Top train row vs holding: train $-242.93, time-split $-120.09, holdout $-29.93 (mean dollars versus buying and holding the entry tokens).
 
 ## established-midcap
 
-grid-bidask-wide-quote-oor led the time-split test among the top 5 train strategies, but the test median (0.04%) and mean (-0.50%) are not both positive, so it is not promoted.
+grid-bidask-wide-two-timeout led the time-split test among the top 5 train strategies, but the test median (0.92%) and mean (-1.64%) are not both positive, so it is not promoted.
 
 | Rank | Strategy | Train n | Train median | Time-test median | Holdout n | Holdout median | Holdout vs hold | Promoted |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `grid-bidask-wide-quote-timeout` | 25 | 0.03% | 0.01% | 7 | 0.00% | $-10.09 |  |
-| 2 | `grid-spot-wide-quote-timeout` | 25 | 0.03% | 0.01% | 7 | 0.00% | $-7.43 |  |
-| 3 | `grid-curve-wide-quote-timeout` | 25 | 0.02% | 0.01% | 7 | 0.00% | $-8.99 |  |
-| 4 | `grid-bidask-wide-quote-oor` | 25 | 0.00% | 0.04% | 7 | 0.00% | $0.02 |  |
-| 5 | `grid-bidask-wide-quote-tp` | 25 | 0.00% | 0.04% | 7 | 0.00% | $0.02 |  |
-| 6 | `grid-spot-wide-quote-oor` | 25 | 0.00% | 0.04% | 7 | 0.00% | $0.02 |  |
-| 7 | `grid-spot-wide-quote-tp` | 25 | 0.00% | 0.04% | 7 | 0.00% | $0.02 |  |
-| 8 | `grid-curve-wide-quote-oor` | 25 | 0.00% | 0.04% | 7 | 0.00% | $0.02 |  |
-| 9 | `grid-curve-wide-quote-tp` | 25 | 0.00% | 0.04% | 7 | 0.00% | $0.02 |  |
-| 10 | `grid-bidask-medium-quote-timeout` | 25 | 0.00% | 0.00% | 7 | -2.42% | $-5.79 |  |
+| 1 | `grid-bidask-wide-two-timeout` | 23 | 1.57% | 0.92% | 8 | -4.62% | $-45.73 |  |
+| 2 | `grid-spot-wide-two-timeout` | 23 | 1.20% | 0.73% | 8 | -5.10% | $-47.46 |  |
+| 3 | `grid-curve-wide-two-timeout` | 23 | 0.83% | 0.53% | 8 | -5.59% | $-49.19 |  |
+| 4 | `grid-spot-wide-quote-timeout` | 23 | 0.03% | 0.11% | 8 | 0.01% | $-3.18 |  |
+| 5 | `grid-bidask-wide-quote-timeout` | 23 | 0.03% | 0.13% | 8 | 0.01% | $-5.49 |  |
+| 6 | `grid-curve-wide-quote-timeout` | 23 | 0.02% | 0.11% | 8 | -0.84% | $-10.62 |  |
+| 7 | `grid-bidask-medium-quote-timeout` | 23 | 0.01% | 0.01% | 8 | -2.05% | $-8.46 |  |
+| 8 | `grid-spot-medium-quote-timeout` | 23 | 0.01% | 0.01% | 8 | -2.44% | $-9.14 |  |
+| 9 | `grid-curve-medium-quote-timeout` | 23 | 0.01% | 0.01% | 8 | -2.83% | $-8.94 |  |
+| 10 | `grid-bidask-wide-quote-tp` | 23 | 0.00% | 0.05% | 8 | 0.01% | $0.84 |  |
 
-Top train row vs holding: train $-11.77, time-split $-5.61, holdout $-10.09 (mean dollars versus buying and holding the entry tokens).
+Top train row vs holding: train $-130.47, time-split $-8.09, holdout $-45.73 (mean dollars versus buying and holding the entry tokens).
 
 ## older-memecoin
 
-grid-bidask-wide-two-oor passed the time split (median 4.54%, mean 4.27%) but the cross-coin holdout did not clear n≥4 with a positive median (-3.53%) and mean (-9.50%), so it is not promoted.
+grid-bidask-wide-quote-oor is promoted: train rank 4, time-split n=23 median 0.17%, holdout n=8 median 0.26%.
 
 | Rank | Strategy | Train n | Train median | Time-test median | Holdout n | Holdout median | Holdout vs hold | Promoted |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `grid-bidask-wide-two-oor` | 21 | 2.13% | 4.54% | 9 | -3.53% | $-16.80 |  |
-| 2 | `grid-bidask-wide-quote-oor` | 21 | 0.35% | 0.22% | 9 | 0.07% | $-1.47 |  |
-| 3 | `grid-bidask-wide-quote-tp` | 21 | 0.35% | 0.22% | 9 | 0.07% | $-1.47 |  |
-| 4 | `grid-spot-wide-quote-oor` | 21 | 0.35% | 0.22% | 9 | 0.07% | $-2.85 |  |
-| 5 | `grid-spot-medium-quote-oor` | 21 | 0.15% | 0.16% | 9 | 0.00% | $-2.42 |  |
-| 6 | `grid-curve-wide-quote-oor` | 21 | 0.15% | 0.22% | 9 | 0.07% | $-3.20 |  |
-| 7 | `grid-spot-wide-quote-tp` | 21 | 0.15% | 0.22% | 9 | 0.07% | $-1.24 |  |
-| 8 | `grid-bidask-medium-quote-oor` | 21 | 0.15% | 0.17% | 9 | 0.00% | $-1.70 |  |
-| 9 | `grid-bidask-medium-quote-tp` | 21 | 0.15% | 0.17% | 9 | 0.00% | $-1.70 |  |
-| 10 | `grid-curve-wide-quote-tp` | 21 | 0.15% | 0.22% | 9 | 0.07% | $-1.53 |  |
+| 1 | `grid-bidask-wide-quote-timeout` | 23 | 0.34% | 0.09% | 8 | 0.32% | $-10.50 |  |
+| 2 | `grid-spot-wide-quote-timeout` | 23 | 0.09% | 0.09% | 8 | 0.32% | $-10.87 |  |
+| 3 | `grid-curve-wide-quote-timeout` | 23 | 0.02% | 0.09% | 8 | 0.26% | $-11.23 |  |
+| 4 | `grid-bidask-wide-quote-oor` | 23 | 0.01% | 0.17% | 8 | 0.26% | $1.27 | yes |
+| 5 | `grid-bidask-wide-quote-tp` | 23 | 0.01% | 0.17% | 8 | 0.26% | $1.27 |  |
+| 6 | `grid-spot-wide-quote-oor` | 23 | 0.01% | 0.17% | 8 | 0.26% | $1.06 |  |
+| 7 | `grid-spot-wide-quote-tp` | 23 | 0.01% | 0.17% | 8 | 0.26% | $1.06 |  |
+| 8 | `grid-curve-wide-quote-oor` | 23 | 0.01% | 0.17% | 8 | 0.26% | $0.84 |  |
+| 9 | `grid-bidask-medium-quote-timeout` | 23 | 0.00% | 0.09% | 8 | 0.00% | $-23.54 |  |
+| 10 | `grid-spot-medium-quote-timeout` | 23 | 0.00% | -12.55% | 8 | 0.00% | $-23.83 |  |
 
-Top train row vs holding: train $-218.48, time-split $-104.02, holdout $-16.80 (mean dollars versus buying and holding the entry tokens).
+Top train row vs holding: train $-8.91, time-split $-16.05, holdout $-10.50 (mean dollars versus buying and holding the entry tokens).
 
 Full rows, including strategies with no trials, are in `reports/leaderboard.csv`.

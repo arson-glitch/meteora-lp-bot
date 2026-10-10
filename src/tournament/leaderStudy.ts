@@ -194,6 +194,9 @@ function summarize(rows: Array<{ trial: TrialResult; key: string; label: string;
 function cautionFor(coinType: CoinType, promoted: boolean, net: LeaderStudy["net"]): string {
   const notes: string[] = [];
   if (!promoted) notes.push("This cell leads the train window and is not a promoted winner.");
+  if (promoted && ((net.test.medianPnlUsd ?? 0) <= 0 || (net.holdout.medianPnlUsd ?? 0) <= 0 || (net.test.meanPnlUsd ?? 0) <= 0 || (net.holdout.meanPnlUsd ?? 0) <= 0)) {
+    notes.push("Promotion used the no-cost leaderboard. After slippage, rent, and fees the median or the mean is no longer positive out of sample.");
+  }
   if (net.test.n < 5 || net.holdout.n < 4) notes.push(`Out-of-sample counts are small (time-split n=${net.test.n}, holdout n=${net.holdout.n}).`);
   if ((net.test.shareOfPositive ?? 0) >= 0.7 || (net.holdout.shareOfPositive ?? 0) >= 0.7) {
     notes.push("Most of the positive PnL sits in three coins, so a few names can dominate the mean.");
@@ -233,8 +236,15 @@ export function forwardStrategySnapshot(params: {
   pools: Map<string, DiscoveredPool>;
   solPriceUsd: number;
   openedAt: string;
+  /** When set with poolTypes, only positions opened in this bucket count. */
+  coinType?: CoinType;
+  poolTypes?: Map<string, string>;
 }): ForwardStrategySnapshot {
-  const positions = params.positions.filter((position) => position.strategyId === params.strategyId && position.openedAt !== params.openedAt);
+  const positions = params.positions.filter((position) => {
+    if (position.strategyId !== params.strategyId || position.openedAt === params.openedAt) return false;
+    if (!params.coinType || !params.poolTypes) return true;
+    return params.poolTypes.get(position.poolAddress) === params.coinType;
+  });
   let gross = 0;
   let net = 0;
   let slippage = 0;
