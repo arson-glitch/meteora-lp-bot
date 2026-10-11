@@ -1,15 +1,16 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
-import { displayPnlUsd } from "../executor/pnl.js";
-import { isSolToken } from "../math/costs.js";
+import { displayPnlUsd, inventoryAmounts } from "../executor/pnl.js";
+import { assumedLiquidityBins } from "../math/activeBin.js";
+import { isSolToken, liquidationCostAllNonSol } from "../math/costs.js";
 import { isQuoteToken } from "../markets.js";
 import { wsCredits } from "../recorder/budget.js";
 import { fetchDlmmPool } from "../scanner/meteora.js";
 import type { CoinType, DiscoveredPool, PaperPosition } from "../types.js";
 import { emptyForwardBook, gridHistory } from "./forward.js";
 import { costOf } from "./frozenBook.js";
-import { H12_TRIAL_BOOK } from "./h12trial.js";
+import { H12_TP_LEVELS, H12_TRIAL_BOOK, h12TpBookPath, h12TpLabel } from "./h12trial.js";
 
 export const DASHBOARD_FILE = "reports/dashboard/index.html";
 
@@ -119,6 +120,8 @@ export interface DashboardModel {
   generatedAt: string;
   books: BookCard[];
   h12Rows: H12DashRow[];
+  /** Take-profit sub-books. Absent on older snapshots. */
+  tpBooks?: BookCard[];
   coins: CoinBreakdown[];
   leaderboardGeneratedAt: string | null;
   leaderboard: LeaderRow[];
@@ -284,18 +287,40 @@ export async function buildDashboard(paths: DashboardPaths): Promise<DashboardMo
   const h12 = loadH12(paths.h12BookPath);
   const frozen = loadFrozen(paths.frozenBookPath);
   const forward = loadForward(paths.forwardPath);
-  const solFallback = h12.sol ?? frozen.sol ?? solFromPositions([...forward.positions, ...frozen.positions, ...h12.positions]);
+  const tpLoaded = H12_TP_LEVELS.map((level) => ({ level, loaded: loadH12(h12TpBookPath(level)) })).filter((row) => row.loaded.missing === null);
+  const solFallback = h12.sol ?? frozen.sol ?? solFromPositions([
+    ...forward.positions,
+    ...frozen.positions,
+    ...h12.positions,
+    ...tpLoaded.flatMap((row) => row.loaded.positions),
+  ]);
   const gridSol = solFallback;
   const addresses = [
     ...h12.positions.map((position) => position.poolAddress),
     ...frozen.positions.map((position) => position.poolAddress),
     ...forward.positions.map((position) => position.poolAddress),
+    ...tpLoaded.flatMap((row) => row.loaded.positions.map((position) => position.poolAddress)),
   ];
   const quotes = await resolveQuotes(addresses, paths.pools, paths.offline === true, nowMs);
   const h12Measured = h12.slots.map((slot) => measure(slot.position, slot.coinType, h12.sol ?? solFallback, quotes.map.get(slot.position.poolAddress) ?? null, slot.entryTvlUsd ?? 0));
   const frozenMeasured = frozen.positions.map((position) => measure(position, "high-vol-trending", frozen.sol ?? solFallback, quotes.map.get(position.poolAddress) ?? null, 0));
   const poolTypes = forward.poolTypes;
   const forwardMeasured = forward.positions.map((position) => measure(position, poolTypes.get(position.poolAddress) ?? "unknown", gridSol, quotes.map.get(position.poolAddress) ?? null, 0));
+  const tpBooks = tpLoaded.map(({ level, loaded }) => {
+    const measured = loaded.slots.map((slot) => measure(
+      slot.position,
+      slot.coinType,
+      loaded.sol ?? solFallback,
+      quotes.map.get(slot.position.poolAddress) ?? null,
+      slot.entryTvlUsd ?? 0,
+    ));
+    const pct = Math.round(level * 100);
+    return {
+      card: card(`h12-${h12TpLabel(level)}`, `H12 ${pct}% take-profit`, loaded.subtitle, loaded.updatedAt, loaded.missing, measured),
+      measured,
+      label: `H12 ${pct}% take-profit`,
+    };
+  });
   const h12Card = card("h12", "H12 trial", h12.subtitle, h12.updatedAt, h12.missing, h12Measured);
   const frozenCard = card("frozen", "Frozen high-vol", frozen.subtitle, frozen.updatedAt, frozen.missing, frozenMeasured);
   const forwardCard = card("grid", "108-cell tournament grid", forward.subtitle, forward.updatedAt, forward.missing, forwardMeasured);
@@ -303,8 +328,10 @@ export async function buildDashboard(paths: DashboardPaths): Promise<DashboardMo
     generatedAt: new Date(nowMs).toISOString(),
     books: [h12Card, frozenCard, forwardCard],
     h12Rows: h12Rows(h12.slots, h12Measured),
+    tpBooks: tpBooks.map((row) => row.card),
     coins: [
       ...coinsOf("H12 trial", h12Measured),
+      ...tpBooks.flatMap((row) => coinsOf(row.label, row.measured)),
       ...coinsOf("Frozen high-vol", frozenMeasured),
       ...coinsOf("108-cell grid", forwardMeasured),
     ],
@@ -425,8 +452,11 @@ export function renderDashboardHtml(model: DashboardModel): string {
     ${renderLineChart("108-cell grid", "#3ecf8e", grid)}
   </div>
   <h2>H12 trial positions</h2>
-  <p class="note">Trial, not promoted. Crossed-bin PnL is the position mark. Active-bin PnL swaps in the parallel fee estimate and does not add it on top. Width is bins each side.</p>
+  <p class="note">Trial, not promoted. Crossed-bin PnL is the position mark. Active-bin PnL swaps in the parallel fee estimate and does not add it on top. Width is bins each side. The original trial has no take-profit.</p>
   ${renderH12Table(model.h12Rows)}
+  <h2>H12 take-profit sub-books</h2>
+  <p class="note">Separate paper books. 10%, 15%, 25%, and 40% of the deposit, measured after exit costs. On a take-profit the non-SOL inventory and unclaimed fees are swapped to SOL. Not promoted. Not added into the original trial.</p>
+  ${(model.tpBooks ?? []).length === 0 ? `<p class="empty">No take-profit sub-books on disk yet.</p>` : `<div class="cards">${(model.tpBooks ?? []).map(renderCard).join("\n")}</div>`}
   <h2>Per coin type</h2>
   ${renderCoinChart(model.coins)}
   ${renderCoinTable(model.coins)}
@@ -494,7 +524,8 @@ function card(id: string, title: string, subtitle: string, updatedAt: string | n
 
 function measure(position: PaperPosition, coinType: string, sol: number, pool: DiscoveredPool | null, fallbackTvl: number): Measured {
   const gross = displayPnlUsd(position);
-  const cost = costOf(position, poolForCost(position, pool, fallbackTvl), sol);
+  const priced = poolForCost(position, pool, fallbackTvl);
+  const cost = position.takeProfitAfterCosts ? takeProfitCost(position, priced, sol) : costOf(position, pool, sol);
   const vsCash = gross - cost.pnlCostUsd;
   return {
     coinType,
@@ -507,6 +538,24 @@ function measure(position: PaperPosition, coinType: string, sol: number, pool: D
     vsHold: position.depositedUsd + vsCash - holdUsd(position),
     status: position.status,
   };
+}
+
+function takeProfitCost(position: PaperPosition, pool: DiscoveredPool, solPriceUsd: number) {
+  const amounts = inventoryAmounts(position);
+  return liquidationCostAllNonSol({
+    pool,
+    minBinId: position.minBinId,
+    maxBinId: position.maxBinId,
+    activeBinId: position.activeBinId,
+    binStep: position.binStep,
+    rebalanceCount: position.rebalanceCount,
+    liquidityBins: assumedLiquidityBins(pool),
+    solPriceUsd,
+    amountX: amounts.amountX + position.feesX,
+    amountY: amounts.amountY + position.feesY,
+    priceXUsd: position.priceXUsd,
+    priceYUsd: position.priceYUsd,
+  });
 }
 
 function h12Rows(slots: H12Slot[], measured: Measured[]): H12DashRow[] {

@@ -681,8 +681,14 @@ export function renderH12TpTrials(statuses: H12TrialStatus[]): string {
   const lines: string[] = [];
   lines.push("## H12 take-profit sub-books");
   lines.push("");
-  lines.push("Separate paper books. Same entry rule as the H12 trial. Take-profit is 10%, 15%, 25%, or 40% of the deposit after exit costs. On that exit the non-SOL inventory and unclaimed fees are swapped to SOL. These are not promoted. The original trial hash is unchanged.");
+  lines.push("Separate paper books. Same entry rule as the H12 trial. Take-profit is 10%, 15%, 25%, or 40% of the deposit after exit costs. On that exit the non-SOL inventory and unclaimed fees are swapped to SOL. These are not promoted. The original trial hash is unchanged. A negative net with no accrued fees is the cost of closing immediately.");
   lines.push("");
+  const rugs = statuses[0]?.rugs ?? [];
+  if (rugs.length > 0) {
+    const passed = rugs.filter((hit) => hit.ok).length;
+    lines.push(`Rug check, shared by all four books: checked ${rugs.length}. Passed ${passed}. Rejected ${rugs.length - passed}.`);
+    lines.push("");
+  }
   if (statuses.length === 0) {
     lines.push("No take-profit sub-books were synced.");
     lines.push("");
