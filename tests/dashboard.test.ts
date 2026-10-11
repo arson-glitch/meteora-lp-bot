@@ -13,6 +13,7 @@ import {
   renderDashboardHtml,
   writeDashboard,
 } from "../src/tournament/dashboard.js";
+import { archiveClosedGridPositions, emptyForwardBook, saveForwardBook } from "../src/tournament/forward.js";
 import { pool } from "./fixtures.js";
 
 const strategy = {
@@ -149,6 +150,39 @@ describe("dashboard page", () => {
       kind: "rejected",
       reasons: "freeze authority",
     }]);
+  });
+});
+
+describe("dashboard archive", () => {
+  it("keeps archived closed grid positions in the book totals", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dash-archive-"));
+    const market = pool({ name: "ARCHIVED-COIN", binStep: 20, currentPrice: 2, tvlUsd: 50_000, address: "pool-arch" });
+    const opened = openPaperPosition({ pool: market, strategy, sizeUsd: 250, nowMs: Date.UTC(2026, 9, 10, 15) });
+    opened.status = "closed";
+    opened.closeReason = "stop-loss";
+    const book = emptyForwardBook(Date.UTC(2026, 9, 11), 250);
+    book.pools.push({ coinType: "fresh-memecoin", address: market.address, name: market.name });
+    book.positions.push(opened);
+    const archiveDir = join(dir, "archive");
+    archiveClosedGridPositions(book, archiveDir, Date.UTC(2026, 9, 11));
+    const forwardPath = join(dir, "forward.json");
+    saveForwardBook(forwardPath, book);
+    const reports = join(dir, "reports");
+    mkdirSync(reports, { recursive: true });
+    const model = await buildDashboard({
+      reportsDir: reports,
+      h12BookPath: join(dir, "missing-h12.json"),
+      frozenBookPath: join(dir, "missing-frozen.json"),
+      forwardPath,
+      nowMs: Date.UTC(2026, 9, 11, 8),
+      offline: true,
+    });
+    const grid = model.books.find((item) => item.id === "grid");
+    expect(grid?.positions).toBe(1);
+    expect(grid?.closed).toBe(1);
+    expect(grid?.open).toBe(0);
+    expect(grid?.depositedUsd).toBe(250);
+    expect(book.positions).toHaveLength(0);
   });
 });
 

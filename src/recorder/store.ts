@@ -43,6 +43,9 @@ export interface LiquidityRow {
   action: "add" | "remove";
 }
 
+/** Sqlite meta key. The dashboard treats any meta key matching /drop/i as this count. */
+export const DROPPED_META_KEY = "dropped_messages";
+
 export interface CreditHour {
   hourStart: number;
   rpcCalls: number;
@@ -228,6 +231,23 @@ export class RecorderStore {
       FROM credit_hours WHERE hour_start >= ?
     `).get(startMs) as { rpc: number; bytes: number };
     return row.rpc + wsCredits(row.bytes);
+  }
+
+  /** First stored hour at or after `startMs`. Null when this span has no rows. */
+  earliestHour(startMs: number): number | null {
+    const row = this.db.prepare(`
+      SELECT MIN(hour_start) AS t FROM credit_hours WHERE hour_start >= ?
+    `).get(startMs) as { t: number | null };
+    return typeof row.t === "number" ? row.t : null;
+  }
+
+  droppedCount(): number {
+    const raw = Number(this.getMeta(DROPPED_META_KEY) ?? "0");
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+  }
+
+  setDroppedCount(count: number): void {
+    this.setMeta(DROPPED_META_KEY, String(Math.max(0, Math.floor(count))));
   }
 
   setMeta(key: string, value: string): void {

@@ -47,6 +47,10 @@ export class LogSubscriber {
     this.addresses = addresses;
   }
 
+  currentAddresses(): string[] {
+    return [...this.addresses];
+  }
+
   /** Pools that produced the most notification bytes since the last hour reset. */
   noisiest(n: number): Array<{ address: string; bytes: number }> {
     return noisiestAddresses(this.bytesByAddress, n);

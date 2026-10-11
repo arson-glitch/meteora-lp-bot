@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -11,12 +11,12 @@ import type { Candle } from "../src/tournament/candles.js";
 import { classifyPool } from "../src/tournament/classify.js";
 import { assignBuckets, selectTournamentBuckets } from "../src/tournament/discover.js";
 import { holdoutCount, splitCoinKeys } from "../src/tournament/holdout.js";
-import { appendForwardPools, emptyForwardBook } from "../src/tournament/forward.js";
+import { appendForwardPools, archiveClosedGridPositions, emptyForwardBook, gridHistory, openPositionCount } from "../src/tournament/forward.js";
 import { openForwardBook } from "../src/tournament/forward.js";
 import { classicGridCells, costAwareCells, gridCells, gridStrategies, strategyFromCell } from "../src/tournament/grid.js";
 import { scoreTrials } from "../src/tournament/score.js";
 import type { TrialResult } from "../src/tournament/backtest.js";
-import type { CoinType, DiscoveredPool, MarketContext } from "../src/types.js";
+import type { CoinType, DiscoveredPool, MarketContext, PaperPosition } from "../src/types.js";
 import { SOL, USDC, USDT, pool, token } from "./fixtures.js";
 
 const now = Date.UTC(2026, 9, 9, 12);
@@ -411,6 +411,65 @@ describe("extra pools and forward append", () => {
     });
     expect(result.added).toHaveLength(0);
     expect(book.pools[0]?.sampleKey).toBeTruthy();
+  });
+});
+
+describe("grid archive and open cap", () => {
+  it("archives closed positions and counts only open ones against 2000", () => {
+    const dir = mkdtempSync(join(tmpdir(), "grid-archive-"));
+    const archiveDir = join(dir, "archive");
+    const pool = solPool(100);
+    const book = openForwardBook({
+      buckets: [{ type: "bluechip", pools: [pool] }],
+      strategies: gridStrategies().slice(0, 2),
+      sizeUsd: 250,
+      nowMs: now,
+    });
+    const closed = book.positions[0];
+    if (!closed) throw new Error("missing position");
+    closed.status = "closed";
+    closed.closeReason = "stop-loss";
+    const first = archiveClosedGridPositions(book, archiveDir, now);
+    expect(first.archived).toBe(1);
+    expect(first.path).toBe(join(archiveDir, "grid-closed-2026-10-09.json"));
+    expect(first.book.positions).toHaveLength(1);
+    expect(first.book.positions[0]?.status).toBe("open");
+    expect(first.book.pools).toHaveLength(1);
+    const again = archiveClosedGridPositions(first.book, archiveDir, now);
+    expect(again.archived).toBe(0);
+    const history = gridHistory(first.book, archiveDir);
+    expect(history.positions).toHaveLength(2);
+    expect(history.positions.filter((position) => position.status === "closed")).toHaveLength(1);
+    const replay = archiveClosedGridPositions({
+      ...first.book,
+      positions: [...first.book.positions, closed],
+    }, archiveDir, now);
+    expect(replay.book.positions.every((position) => position.status === "open")).toBe(true);
+    const stored = JSON.parse(readFileSync(replay.path ?? "", "utf8")) as { positions: PaperPosition[] };
+    expect(stored.positions).toHaveLength(1);
+
+    const capped = emptyForwardBook(now, 250);
+    capped.positions = Array.from({ length: 2000 }, (_, index) => ({ status: "open", id: `open-${index}` }) as PaperPosition);
+    const blocked = appendForwardPools({
+      book: capped,
+      buckets: [{ type: "bluechip", pools: [solPool(80)] }],
+      strategies: gridStrategies().slice(0, 1),
+      sizeUsd: 250,
+      nowMs: now,
+    });
+    expect(blocked.added).toHaveLength(0);
+    const room = emptyForwardBook(now, 250);
+    room.positions = Array.from({ length: 1999 }, (_, index) => ({ status: "closed", id: `closed-${index}` }) as PaperPosition);
+    room.pools.push({ coinType: "bluechip", address: "old-pool", name: "OLD", sampleKey: "old-key" });
+    const opened = appendForwardPools({
+      book: room,
+      buckets: [{ type: "bluechip", pools: [pool] }],
+      strategies: gridStrategies().slice(0, 1),
+      sizeUsd: 250,
+      nowMs: now,
+    });
+    expect(opened.added).toHaveLength(1);
+    expect(openPositionCount(opened.book)).toBe(1);
   });
 });
 

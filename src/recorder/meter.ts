@@ -1,6 +1,6 @@
 import { Connection } from "@solana/web3.js";
 import { sleep } from "../http.js";
-import { creditsFromRpcBody, DEFAULT_RPC_RPS, hourStartMs, projectedFromHourCredits, projectedMonthCredits, wsCredits } from "./budget.js";
+import { creditsFromRpcBody, DEFAULT_RPC_RPS, HELIUS_FREE_MONTHLY_CREDITS, hourStartMs, monthStartMs, projectedFromHourCredits, projectedMonthCredits, wsCredits } from "./budget.js";
 import { redact } from "./redact.js";
 import { dayCredits, type CreditHour, type RecorderStore } from "./store.js";
 
@@ -67,7 +67,9 @@ export class CreditMeter {
     if (hour === this.current.hourStart) return null;
     const closed = { ...this.current };
     this.store.saveHour(closed);
-    this.log(formatHour(closed, this.store.creditsSince(monthStart(nowMs)), this.dailyCap, nowMs));
+    const start = monthStartMs(nowMs);
+    const earliest = this.store.earliestHour(start) ?? closed.hourStart;
+    this.log(formatHour(closed, this.store.creditsSince(start), this.dailyCap, nowMs, earliest));
     const saved = this.store.getHour(hour);
     this.current = saved ?? { hourStart: hour, rpcCalls: 0, rpcCredits: 0, wsMessages: 0, wsBytes: 0 };
     this.lastLoggedHour = hour;
@@ -76,8 +78,12 @@ export class CreditMeter {
 
   snapshotLine(nowMs = Date.now()): string {
     this.flush();
-    const month = this.store.creditsSince(monthStart(nowMs));
-    return `credits today=${this.usedToday(nowMs).toFixed(1)} month=${month.toFixed(1)} cap=${this.dailyCap} hour_ws_bytes=${this.current.wsBytes} hour_rpc=${this.current.rpcCredits}`;
+    const start = monthStartMs(nowMs);
+    const month = this.store.creditsSince(start);
+    const earliest = this.store.earliestHour(start) ?? this.current.hourStart;
+    const projectedMonth = projectedMonthCredits(month, nowMs, earliest);
+    const projectedHour = projectedFromHourCredits(this.openHourTotal());
+    return `credits today=${this.usedToday(nowMs).toFixed(1)} daily_cap=${this.dailyCap} month_to_date=${month.toFixed(1)} monthly_cap=${HELIUS_FREE_MONTHLY_CREDITS} projected_month=${projectedMonth.toFixed(0)} projected_from_hour=${projectedHour.toFixed(0)} hour_ws_bytes=${this.current.wsBytes} hour_rpc=${this.current.rpcCredits}`;
   }
 
   /** RPC plus websocket credits accumulated in the open UTC hour. */
@@ -86,17 +92,12 @@ export class CreditMeter {
   }
 }
 
-export function formatHour(hour: CreditHour, monthCredits: number, dailyCap: number, nowMs: number): string {
+export function formatHour(hour: CreditHour, monthCredits: number, dailyCap: number, nowMs: number, sinceMs?: number): string {
   const ws = wsCredits(hour.wsBytes);
   const total = hour.rpcCredits + ws;
-  const projectedMonth = projectedMonthCredits(monthCredits, nowMs);
+  const projectedMonth = projectedMonthCredits(monthCredits, nowMs, sinceMs);
   const projectedHour = projectedFromHourCredits(total);
-  return `credits hour=${new Date(hour.hourStart).toISOString()} rpc_calls=${hour.rpcCalls} rpc_credits=${hour.rpcCredits} ws_messages=${hour.wsMessages} ws_bytes=${hour.wsBytes} ws_credits=${ws.toFixed(2)} hour_total=${total.toFixed(2)} month_to_date=${monthCredits.toFixed(1)} projected_month=${projectedMonth.toFixed(0)} projected_from_hour=${projectedHour.toFixed(0)} daily_cap=${dailyCap}`;
-}
-
-function monthStart(nowMs: number): number {
-  const date = new Date(nowMs);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+  return `credits hour=${new Date(hour.hourStart).toISOString()} rpc_calls=${hour.rpcCalls} rpc_credits=${hour.rpcCredits} ws_messages=${hour.wsMessages} ws_bytes=${hour.wsBytes} ws_credits=${ws.toFixed(2)} hour_total=${total.toFixed(2)} month_to_date=${monthCredits.toFixed(1)} monthly_cap=${HELIUS_FREE_MONTHLY_CREDITS} projected_month=${projectedMonth.toFixed(0)} projected_from_hour=${projectedHour.toFixed(0)} daily_cap=${dailyCap}`;
 }
 
 export function meteredConnection(httpUrl: string, limiter: RateLimiter, meter: CreditMeter, secret: string | undefined): Connection {

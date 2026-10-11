@@ -6,7 +6,8 @@ import { isSolToken } from "../math/costs.js";
 import { isQuoteToken } from "../markets.js";
 import { wsCredits } from "../recorder/budget.js";
 import { fetchDlmmPool } from "../scanner/meteora.js";
-import type { DiscoveredPool, PaperPosition } from "../types.js";
+import type { CoinType, DiscoveredPool, PaperPosition } from "../types.js";
+import { emptyForwardBook, gridHistory } from "./forward.js";
 import { costOf } from "./frozenBook.js";
 import { H12_TRIAL_BOOK } from "./h12trial.js";
 
@@ -605,15 +606,20 @@ function loadFrozen(path: string): { positions: PaperPosition[]; updatedAt: stri
 function loadForward(path: string): { positions: PaperPosition[]; poolTypes: Map<string, string>; updatedAt: string | null; subtitle: string; missing: string | null } {
   const raw = readJson(path);
   if (raw === undefined) return { positions: [], poolTypes: new Map(), updatedAt: null, subtitle: "Book file is not on disk.", missing: path };
-  const book = raw as { updatedAt?: string; pools?: Array<{ address: string; coinType: string }>; positions?: PaperPosition[] };
-  const positions = Array.isArray(book.positions) ? book.positions : [];
-  const pools = Array.isArray(book.pools) ? book.pools : [];
-  const strategies = new Set(positions.map((position) => position.strategyId));
+  const book = raw as { updatedAt?: string; sizeUsd?: number; pools?: Array<{ address: string; coinType: CoinType; name?: string; sampleKey?: string }>; positions?: PaperPosition[] };
+  const active = emptyForwardBook(Date.parse(book.updatedAt ?? "") || 0, book.sizeUsd ?? 250);
+  active.updatedAt = book.updatedAt ?? active.updatedAt;
+  active.pools = Array.isArray(book.pools)
+    ? book.pools.map((pool) => ({ coinType: pool.coinType, address: pool.address, name: pool.name ?? pool.address, sampleKey: pool.sampleKey }))
+    : [];
+  active.positions = Array.isArray(book.positions) ? book.positions : [];
+  const history = gridHistory(active, join(dirname(path), "archive"));
+  const strategies = new Set(history.positions.map((position) => position.strategyId));
   return {
-    positions,
-    poolTypes: new Map(pools.map((pool) => [pool.address, pool.coinType])),
+    positions: history.positions,
+    poolTypes: new Map(history.pools.map((pool) => [pool.address, pool.coinType])),
     updatedAt: book.updatedAt ?? null,
-    subtitle: `${strategies.size} strategies · ${pools.length} pools`,
+    subtitle: `${strategies.size} strategies · ${history.pools.length} pools`,
     missing: null,
   };
 }

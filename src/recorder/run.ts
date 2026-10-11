@@ -9,8 +9,6 @@ import {
   HELIUS_FREE_MONTHLY_CREDITS,
   HELIUS_FREE_RPC_RPS,
   hourStartMs,
-  projectedFromHourCredits,
-  projectedMonthCredits,
   reservedSnapshotCredits,
 } from "./budget.js";
 import { decodeDlmmEvents, selectTracked, type DecodedEvent } from "./decode.js";
@@ -21,7 +19,8 @@ import { snapshotPool, type SnapshotClient } from "./snapshot.js";
 import { openStore, liquidityRow, swapRow } from "./store.js";
 import { LogSubscriber, type WsMode } from "./subscribe.js";
 import { eventsFromTransaction } from "./txEvents.js";
-import { parseWsBuckets, poolsForWebsocket, WS_BUCKETS } from "./wsFilter.js";
+import { nextWebsocketAddresses, parseWsBuckets, poolsForWebsocket, WS_BUCKETS } from "./wsFilter.js";
+import { loadWsAddresses, loadWsTracked } from "./wsPools.js";
 
 export interface RecordOptions {
   dir: string;
@@ -39,6 +38,10 @@ export interface RecordOptions {
   wsBuckets: string | undefined;
   /** Each UTC hour, unsubscribe this many loudest pools. 0 keeps every subscription. */
   wsDropNoisiest: number;
+  /** Comma-separated addresses or a file. Combined with `wsFromBook` when both are set. */
+  wsPools: string | undefined;
+  /** H12 trial book (or any JSON with open slots/positions). Reread at each UTC hour. */
+  wsFromBook: string | undefined;
   backfillPerPool: number;
   backfillMaxAgeMs: number;
   secret: string | undefined;
@@ -76,11 +79,45 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
   if (bucketFilter.unknown.length > 0) {
     log(`websocket ignored unknown buckets: ${bucketFilter.unknown.join(", ")} (known: ${WS_BUCKETS.join(", ")})`);
   }
-  const wsPools = options.wsMode === "program" ? pools : poolsForWebsocket(pools, bucketFilter);
   const droppedWs = new Set<string>();
+  let explicit: string[] | null = null;
+  const readExplicit = (): string[] | null => {
+    if (options.wsPools === undefined && options.wsFromBook === undefined) return null;
+    const found: string[] = [];
+    let failed = false;
+    for (const source of [options.wsPools, options.wsFromBook]) {
+      if (!source) continue;
+      try {
+        found.push(...loadWsAddresses(source));
+        for (const pool of loadWsTracked(source)) {
+          tracked.add(pool.address);
+          if (!pools.some((known) => known.address === pool.address)) store.upsertPools([pool]);
+        }
+      } catch (error) {
+        failed = true;
+        log(`websocket pool list ${source} unreadable: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    if (failed && explicit) return explicit;
+    return [...new Set(found)];
+  };
+  explicit = readExplicit();
+  for (const address of explicit ?? []) tracked.add(address);
+  const desiredAddresses = () => nextWebsocketAddresses({
+    mode: options.wsMode,
+    all: pools.map((pool) => pool.address),
+    bucketFiltered: poolsForWebsocket(pools, bucketFilter).map((pool) => pool.address),
+    explicit,
+    dropped: droppedWs,
+  });
   log(`tracking ${pools.length} pools`);
-  if (bucketFilter.buckets) {
-    log(`websocket buckets=${[...bucketFilter.buckets].join(",")} streaming=${wsPools.length}; snapshots stay on all ${pools.length} pools`);
+  if (options.wsMode === "program" && (options.wsPools || options.wsFromBook)) {
+    log("websocket --ws-pools and --ws-from-book are ignored with --ws program");
+  } else if (explicit) {
+    const sources = [options.wsPools ? `--ws-pools ${options.wsPools}` : "", options.wsFromBook ? `--ws-from-book ${options.wsFromBook}` : ""].filter(Boolean).join(" ");
+    log(`websocket ${sources} streaming=${explicit.length}; snapshots stay on all ${pools.length} pools; reread at each UTC hour`);
+  } else if (bucketFilter.buckets) {
+    log(`websocket buckets=${[...bucketFilter.buckets].join(",")} streaming=${desiredAddresses().length}; snapshots stay on all ${pools.length} pools`);
   }
   if (options.wsDropNoisiest > 0 && options.wsMode === "program") {
     log("--ws-drop-noisiest applies to per-pool subscriptions; program mode is one subscription");
@@ -92,7 +129,17 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
   const connection = meteredConnection(endpoint.http, limiter, meter, options.secret);
   let sessionSwaps = 0;
   let sessionLiquidity = 0;
-  let dropped = 0;
+  let dropped = store.droppedCount();
+  let persistedDrops = dropped;
+  const persistDrops = (force = false) => {
+    if (!force && dropped - persistedDrops < 25) return;
+    store.setDroppedCount(dropped);
+    persistedDrops = dropped;
+  };
+  const noteDrop = () => {
+    dropped += 1;
+    persistDrops(false);
+  };
   let lastSlot: number | null = null;
   let stopping = false;
   const queue: Array<{ signature: string; slot: number; attempts: number }> = [];
@@ -127,7 +174,7 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
     }
     if (!swapRoom() || queued.has(signature)) return;
     if (queue.length >= 400) {
-      dropped += 1;
+      noteDrop();
       return;
     }
     queued.add(signature);
@@ -150,7 +197,7 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
   const subscriber = new LogSubscriber({
     url: endpoint.ws,
     mode: options.wsMode,
-    addresses: wsPools.map((pool) => pool.address),
+    addresses: desiredAddresses(),
     programId: DLMM_PROGRAM_ID,
     meter,
     secret: options.secret,
@@ -168,6 +215,7 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
     log("stopping");
     subscriber.stop();
     meter.flush();
+    persistDrops(true);
     store.close();
     try {
       unlinkSync(pidPath);
@@ -198,7 +246,7 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
         }
         queued.delete(job.signature);
         if (!swapRoom()) {
-          dropped += 1;
+          noteDrop();
           continue;
         }
         try {
@@ -228,26 +276,40 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
 
   const nameOf = (address: string) => pools.find((pool) => pool.address === address)?.name ?? address;
   let rankedHour = hourStartMs(Date.now());
+  const sameAddresses = (left: readonly string[], right: readonly string[]) => {
+    if (left.length !== right.length) return false;
+    const set = new Set(left);
+    return right.every((address) => set.has(address));
+  };
   const onHour = () => {
     const hour = hourStartMs(Date.now());
     if (hour === rankedHour) return;
     rankedHour = hour;
-    if (options.wsDropNoisiest <= 0 || options.wsMode !== "mentions") {
-      subscriber.resetHourBytes();
-      return;
+    const before = explicit ? [...explicit] : null;
+    explicit = readExplicit();
+    if (explicit && before) {
+      const added = explicit.filter((address) => !before.includes(address));
+      const removed = before.filter((address) => !explicit?.includes(address));
+      if (added.length > 0 || removed.length > 0) {
+        log(`websocket hour refresh added ${added.length} removed ${removed.length}`);
+      }
     }
-    const loud = subscriber.noisiest(options.wsDropNoisiest);
-    if (loud.length === 0) {
-      subscriber.resetHourBytes();
-      return;
+    if (options.wsDropNoisiest > 0 && options.wsMode === "mentions") {
+      const loud = subscriber.noisiest(options.wsDropNoisiest);
+      for (const item of loud) droppedWs.add(item.address);
+      if (loud.length > 0) {
+        const listed = loud.map((item) => `${nameOf(item.address)} ${item.bytes}B`).join(", ");
+        log(`websocket dropped noisiest ${listed}`);
+      }
     }
-    for (const item of loud) droppedWs.add(item.address);
-    const keep = wsPools.filter((pool) => !droppedWs.has(pool.address)).map((pool) => pool.address);
-    subscriber.setAddresses(keep);
     subscriber.resetHourBytes();
-    subscriber.resubscribe();
-    const listed = loud.map((item) => `${nameOf(item.address)} ${item.bytes}B`).join(", ");
-    log(`websocket dropped noisiest ${listed}; streaming ${keep.length} of ${pools.length}`);
+    const next = desiredAddresses();
+    if (options.wsMode === "mentions" && !sameAddresses(subscriber.currentAddresses(), next)) {
+      subscriber.setAddresses(next);
+      subscriber.resubscribe();
+      log(`websocket streaming ${next.length}; snapshots stay on all ${pools.length} pools`);
+    }
+    persistDrops(true);
   };
 
   subscriber.start();
@@ -266,6 +328,7 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
     stopping = true;
     await drained;
     const counts = store.counts();
+    persistDrops(true);
     log(`smoke done swaps=${counts.swaps} liquidity=${counts.liquidity} snapshots=${counts.snapshots} session_swaps=${sessionSwaps} session_liquidity=${sessionLiquidity} dropped=${dropped} ${meter.snapshotLine()}`);
     shutdown();
     return counts;
@@ -281,9 +344,8 @@ export async function runRecord(options: RecordOptions): Promise<{ swaps: number
     onHour();
     if (Date.now() >= nextHeartbeat) {
       const counts = store.counts();
-      const now = Date.now();
-      const month = store.creditsSince(monthStart(now));
-      log(`heartbeat swaps=${counts.swaps} liquidity=${counts.liquidity} snapshots=${counts.snapshots} queue=${queue.length} dropped=${dropped} ${meter.snapshotLine()} projected_month=${projectedMonthCredits(month, now).toFixed(0)} projected_from_hour=${projectedFromHourCredits(meter.openHourTotal()).toFixed(0)}`);
+      persistDrops(true);
+      log(`heartbeat swaps=${counts.swaps} liquidity=${counts.liquidity} snapshots=${counts.snapshots} queue=${queue.length} dropped=${dropped} ${meter.snapshotLine()}`);
       nextHeartbeat = Date.now() + 5 * 60_000;
     }
     if (due(store, options.snapshotMinutes)) {
@@ -334,11 +396,6 @@ function due(store: ReturnType<typeof openStore>, minutes: number): boolean {
   return Date.now() - last >= minutes * 60_000;
 }
 
-function monthStart(nowMs: number): number {
-  const date = new Date(nowMs);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
-}
-
 function resolveEndpoint(secret: string | undefined, rpcUrl: string): { http: string; ws: string; helius: boolean } {
   if (secret) {
     const query = `api-key=${encodeURIComponent(secret)}`;
@@ -368,6 +425,8 @@ export function defaultRecordOptions(overrides: Partial<RecordOptions> = {}): Re
     wsMode: "mentions",
     wsBuckets: undefined,
     wsDropNoisiest: 0,
+    wsPools: undefined,
+    wsFromBook: undefined,
     backfillPerPool: 15,
     backfillMaxAgeMs: 6 * 60 * 60 * 1000,
     secret: process.env.HELIUS_API_KEY?.trim() || undefined,

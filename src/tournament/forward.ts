@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { advancePosition, openPaperPosition } from "../executor/paper.js";
 import { displayPnlUsd } from "../executor/pnl.js";
 import { fetchDlmmPool } from "../scanner/meteora.js";
@@ -134,7 +134,7 @@ export function appendForwardPools(params: {
       return !addresses.has(candidate.address) && !keys.has(key);
     });
     if (!pool) continue;
-    if (params.book.positions.length + params.strategies.length > FORWARD_POSITION_CAP) break;
+    if (openPositionCount(params.book) + params.strategies.length > FORWARD_POSITION_CAP) break;
     const opened = openForwardBook({
       buckets: [{ type: bucket.type, pools: [pool] }],
       strategies: params.strategies,
@@ -150,6 +150,105 @@ export function appendForwardPools(params: {
   params.book.updatedAt = new Date(params.nowMs).toISOString();
   params.book.sizeUsd = params.sizeUsd;
   return { book: params.book, added };
+}
+
+export function openPositionCount(book: TournamentForwardBook): number {
+  return book.positions.filter((position) => position.status === "open").length;
+}
+
+export function gridArchiveDir(forwardPath: string): string {
+  return join(dirname(forwardPath), "archive");
+}
+
+export interface GridClosedArchive {
+  version: 1;
+  kind: "grid-closed-archive";
+  day: string;
+  archivedAt: string;
+  positions: PaperPosition[];
+  pools: TournamentForwardBook["pools"];
+}
+
+/**
+ * Moves closed 108-cell positions out of the active book into
+ * data/archive/grid-closed-YYYY-MM-DD.json. Pool rows stay so the same coin
+ * is not opened again. Reports add the files back with `gridHistory`.
+ */
+export function archiveClosedGridPositions(
+  book: TournamentForwardBook,
+  archiveDir: string,
+  nowMs: number,
+): { book: TournamentForwardBook; archived: number; path: string | null } {
+  const closed = book.positions.filter((position) => position.status === "closed");
+  if (closed.length === 0) return { book, archived: 0, path: null };
+  const day = new Date(nowMs).toISOString().slice(0, 10);
+  const path = join(archiveDir, `grid-closed-${day}.json`);
+  const existing = readGridArchive(path);
+  const seen = new Set(existing.positions.map((position) => position.id));
+  const fresh = closed.filter((position) => !seen.has(position.id));
+  const closedAddresses = new Set(closed.map((position) => position.poolAddress));
+  const file: GridClosedArchive = {
+    version: 1,
+    kind: "grid-closed-archive",
+    day,
+    archivedAt: new Date(nowMs).toISOString(),
+    positions: [...existing.positions, ...fresh],
+    pools: mergePools(existing.pools, book.pools.filter((pool) => closedAddresses.has(pool.address))),
+  };
+  mkdirSync(archiveDir, { recursive: true });
+  writeFileSync(path, JSON.stringify(file));
+  book.positions = book.positions.filter((position) => position.status !== "closed");
+  book.updatedAt = new Date(nowMs).toISOString();
+  return { book, archived: fresh.length, path };
+}
+
+export function loadArchivedGridPositions(archiveDir: string): { positions: PaperPosition[]; pools: TournamentForwardBook["pools"] } {
+  if (!existsSync(archiveDir)) return { positions: [], pools: [] };
+  const names = readdirSync(archiveDir).filter((name) => /^grid-closed-\d{4}-\d{2}-\d{2}\.json$/.test(name)).sort();
+  const byId = new Map<string, PaperPosition>();
+  let pools: TournamentForwardBook["pools"] = [];
+  for (const name of names) {
+    const file = readGridArchive(join(archiveDir, name));
+    for (const position of file.positions) byId.set(position.id, position);
+    pools = mergePools(pools, file.pools);
+  }
+  return { positions: [...byId.values()], pools };
+}
+
+/** Active book plus every closed archive. Active rows win when an id is in both. */
+export function gridHistory(book: TournamentForwardBook, archiveDir: string): TournamentForwardBook {
+  const archived = loadArchivedGridPositions(archiveDir);
+  const activeIds = new Set(book.positions.map((position) => position.id));
+  return {
+    ...book,
+    pools: mergePools(archived.pools, book.pools),
+    positions: [...archived.positions.filter((position) => !activeIds.has(position.id)), ...book.positions],
+  };
+}
+
+function readGridArchive(path: string): GridClosedArchive {
+  if (!existsSync(path)) return { version: 1, kind: "grid-closed-archive", day: "", archivedAt: "", positions: [], pools: [] };
+  const raw = JSON.parse(readFileSync(path, "utf8")) as GridClosedArchive;
+  if (raw.kind !== "grid-closed-archive" || !Array.isArray(raw.positions)) {
+    throw new Error(`${path} is not a grid closed archive`);
+  }
+  return {
+    version: 1,
+    kind: "grid-closed-archive",
+    day: raw.day ?? "",
+    archivedAt: raw.archivedAt ?? "",
+    positions: raw.positions,
+    pools: Array.isArray(raw.pools) ? raw.pools : [],
+  };
+}
+
+function mergePools(
+  base: TournamentForwardBook["pools"],
+  extra: TournamentForwardBook["pools"],
+): TournamentForwardBook["pools"] {
+  const byAddress = new Map(base.map((pool) => [pool.address, pool]));
+  for (const pool of extra) byAddress.set(pool.address, pool);
+  return [...byAddress.values()];
 }
 
 export function loadForwardBookIfPresent(path: string, nowMs: number, sizeUsd: number): TournamentForwardBook {

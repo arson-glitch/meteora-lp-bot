@@ -14,9 +14,14 @@ import {
 } from "./discover.js";
 import {
   appendForwardPools,
+  archiveClosedGridPositions,
+  FORWARD_POSITION_CAP,
   forwardStatus,
+  gridArchiveDir,
+  gridHistory,
   loadForwardBookIfPresent,
   markForwardBook,
+  openPositionCount,
   saveForwardBook,
   type ForwardStatus,
 } from "./forward.js";
@@ -58,10 +63,14 @@ export async function runDaily(options: DailyOptions): Promise<string> {
   const log = options.onProgress ?? (() => {});
   const prior = readPrior(join(options.reportsDir, "leaderboard.json"));
   let marked: ForwardStatus | null = null;
+  const archiveDir = gridArchiveDir(options.forwardPath);
   if (existsSync(options.forwardPath)) {
     log("Marking forward paper positions");
-    const book = await markForwardBook(options.forwardPath, nowMs);
-    marked = forwardStatus(book);
+    const markedBook = await markForwardBook(options.forwardPath, nowMs);
+    const archived = archiveClosedGridPositions(markedBook, archiveDir, nowMs);
+    saveForwardBook(options.forwardPath, archived.book);
+    if (archived.archived > 0 && archived.path) log(`Archived ${archived.archived} closed grid positions to ${archived.path}`);
+    marked = forwardStatus(gridHistory(archived.book, archiveDir));
   } else {
     log("No forward book yet");
   }
@@ -96,6 +105,7 @@ export async function runDaily(options: DailyOptions): Promise<string> {
   });
   saveForwardBook(options.forwardPath, appended.book);
   log(`Opened ${appended.added.length} new forward pools`);
+  const history = gridHistory(appended.book, archiveDir);
 
   const frozen = await syncFrozenHighVolBook({
     path: options.frozenBookPath ?? options.forwardPath.replace(/tournament-forward\.json$/, "frozen-high-vol-forward.json"),
@@ -141,19 +151,20 @@ export async function runDaily(options: DailyOptions): Promise<string> {
       sizeUsd,
       marked,
       added: appended.added.map((pool) => `${pool.coinType} ${pool.name}`),
-      forwardPositions: appended.book.positions.length,
+      forwardPositions: history.positions.length,
+      activeOpen: openPositionCount(appended.book),
       boards: result.boards,
       prior,
       trials: result.trials,
       frozen,
       leaders: result.leaders,
       solPriceUsd: result.solPriceUsd,
-      positions: appended.book.positions,
+      positions: history.positions,
       pools: universe,
       openedAt: new Date(nowMs).toISOString(),
       rugs: rugHits,
       noFresh,
-      poolTypes: new Map(appended.book.pools.map((pool) => [pool.address, pool.coinType])),
+      poolTypes: new Map(history.pools.map((pool) => [pool.address, pool.coinType])),
       h12,
     }),
   );
@@ -208,6 +219,7 @@ function renderDaily(params: {
   marked: ForwardStatus | null;
   added: string[];
   forwardPositions: number;
+  activeOpen: number;
   boards: BucketLeaderboard[];
   prior: Map<string, string | null> | null;
   trials: number;
@@ -245,7 +257,7 @@ function renderDaily(params: {
     }
   }
   lines.push("");
-  lines.push(`New forward trials: ${params.added.length ? params.added.join("; ") : "none"}. Book size after opens: ${params.forwardPositions} positions.`);
+  lines.push(`New forward trials: ${params.added.length ? params.added.join("; ") : "none"}. Active book: ${params.activeOpen} open positions. The ${FORWARD_POSITION_CAP.toLocaleString("en-US")} cap counts open positions. Combined with archived closes: ${params.forwardPositions} positions.`);
   if (params.noFresh.length > 0) {
     lines.push("");
     lines.push(`No unseen pool remained in the scan for: ${params.noFresh.join(", ")}.`);

@@ -36,6 +36,8 @@ async function main(): Promise<void> {
     wsMode: flagString(flags, "ws") === "program" ? "program" : "mentions" satisfies WsMode,
     wsBuckets: flagString(flags, "ws-buckets"),
     wsDropNoisiest: flagNumber(flags, "ws-drop-noisiest") ?? 0,
+    wsPools: flagString(flags, "ws-pools"),
+    wsFromBook: flagString(flags, "ws-from-book"),
     backfillPerPool: flagNumber(flags, "backfill") ?? 15,
   });
   const counts = await runRecord(options);
@@ -89,6 +91,8 @@ function help(): string {
     "  --daily-credit-cap <n>   Stop RPC and the socket at this estimate (default 32000)",
     "  --ws mentions|program    Per-pool logsSubscribe, or the whole DLMM program",
     "  --ws-buckets <list>      Coin types for the socket only (default all). Snapshots stay on every pool",
+    "  --ws-pools <file|list>   Socket addresses. A path, or comma-separated pool addresses",
+    "  --ws-from-book <path>    Socket = open pools in an H12 trial book. Reread each UTC hour",
     "  --ws-drop-noisiest <n>   Each UTC hour, unsubscribe the n loudest pools (default 0)",
     "  --dir <path>             Data directory",
     "  --out <path>             Export directory",

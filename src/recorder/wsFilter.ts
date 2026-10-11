@@ -39,6 +39,23 @@ export function poolsForWebsocket(pools: TrackedPool[], filter: WsBucketFilter):
   return pools.filter((pool) => pool.coinType !== "unclassified" && filter.buckets?.has(pool.coinType) === true);
 }
 
+/**
+ * Addresses for logsSubscribe. An explicit list (H12 book or `--ws-pools`) replaces
+ * the bucket filter. Program mode is one subscription and ignores both.
+ * `dropped` are pools already unsubscribed as noisiest this process.
+ */
+export function nextWebsocketAddresses(params: {
+  mode: "mentions" | "program";
+  all: readonly string[];
+  bucketFiltered: readonly string[];
+  explicit: readonly string[] | null;
+  dropped: ReadonlySet<string>;
+}): string[] {
+  if (params.mode === "program") return [...params.all];
+  const base = params.explicit ?? params.bucketFiltered;
+  return base.filter((address) => !params.dropped.has(address));
+}
+
 /** Loudest pools this hour. Zero-byte pools are left subscribed. Ties break by address. */
 export function noisiestAddresses(
   bytesByAddress: Iterable<[string, number]>,

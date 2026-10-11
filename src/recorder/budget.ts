@@ -76,10 +76,20 @@ export function reservedSnapshotCredits(params: {
   return roundsLeft * params.pools * params.rpcPerSnapshot;
 }
 
-export function projectedMonthCredits(monthToDate: number, nowMs: number): number {
-  const day = new Date(nowMs).getUTCDate();
-  const elapsed = Math.max(1, day);
-  return (monthToDate / elapsed) * 30;
+export function monthStartMs(nowMs: number): number {
+  const date = new Date(nowMs);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+}
+
+/**
+ * 30-day run rate. Elapsed time starts at the first recorded credit hour, not
+ * at day 1 of the calendar month: dividing by the UTC date understated the
+ * pace whenever the recorder started mid-month.
+ */
+export function projectedMonthCredits(monthToDate: number, nowMs: number, sinceMs?: number): number {
+  const start = sinceMs ?? monthStartMs(nowMs);
+  const elapsedMs = Math.max(nowMs - start, 3_600_000);
+  return (monthToDate / (elapsedMs / 86_400_000)) * 30;
 }
 
 /** This hour's credits, repeated for every hour of a 30-day month. */

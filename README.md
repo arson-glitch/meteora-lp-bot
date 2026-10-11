@@ -113,7 +113,7 @@ npm run tournament-mark
 npm run daily
 ```
 
-`tournament-mark` advances the forward book against live pool prices. `npm run daily` marks that book, opens the 108-cell grid on one new unscanned coin per bucket, reruns the tournament, opens the frozen high-vol strategy on every newly qualifying high-vol pool, and writes `reports/daily/YYYY-MM-DD.md` with the forward PnL, winner changes, dollars versus simply holding the entry tokens, and the frozen book's liquidation PnL.
+`tournament-mark` advances the forward book against live pool prices. `npm run daily` marks that book, moves closed 108-cell positions into `data/archive/grid-closed-YYYY-MM-DD.json`, then opens the grid on one new unscanned coin per bucket. The 2,000 cap counts open positions only. Pool rows stay in the active book, so a coin is not opened twice. Reports and the dashboard add the archive back into the totals. The same run reruns the tournament, opens the frozen high-vol strategy on every newly qualifying high-vol pool, and writes `reports/daily/YYYY-MM-DD.md` with the forward PnL, winner changes, dollars versus simply holding the entry tokens, and the frozen book's liquidation PnL.
 
 `npm run h12-stress` replays the adaptive-width rule on a rolling walk-forward of the discovered universe. It uses free Meteora candles only and writes `reports/h12-stress-YYYY-MM-DD.md`.
 
@@ -181,11 +181,13 @@ Enhanced `transactionSubscribe` is not on the Helius free plan. `parsedTransacti
 
 Current Swap2 emits with Anchor `emit_cpi!`. The event is not a `Program data:` log line. It is the inner instruction: 8-byte Anchor CPI discriminator, then the event. The recorder reads signatures from the socket and loads each transaction with `getTransaction` (`maxSupportedTransactionVersion: 1`), then decodes that instruction with the SDK IDL. `Program data:` logs are still decoded when a pool emits them, and those do not cost an extra RPC call.
 
-Free-plan limits used here: 1,000,000 credits per month, 10 RPC requests per second, 5 WebSocket connections, 1,000 subscriptions per connection. The process caps itself at 4 RPC requests per second and 32,000 estimated credits per UTC day. Helius free returned constant HTTP 429s at 8 requests per second, so 4 is the default. `--rps 8` is still under the documented 10/s ceiling. The process reserves the credits for the remaining 15-minute snapshots before it fetches more swaps, and it closes the socket once that swap budget is gone so websocket bytes do not eat the snapshot reserve. A credit line is written at each hour change. It includes `projected_month` (month-to-date credits divided by the UTC day of the month, times 30) and `projected_from_hour` (that hour's total times 24 times 30). A heartbeat every five minutes repeats both projections for the open hour. The queue holds at most 400 signatures; overflow is counted as dropped.
+Free-plan limits used here: 1,000,000 credits per month, 10 RPC requests per second, 5 WebSocket connections, 1,000 subscriptions per connection. The process caps itself at 4 RPC requests per second and 32,000 estimated credits per UTC day. Helius free returned constant HTTP 429s at 8 requests per second, so 4 is the default. `--rps 8` is still under the documented 10/s ceiling. The process reserves the credits for the remaining 15-minute snapshots before it fetches more swaps, and it closes the socket once that swap budget is gone so websocket bytes do not eat the snapshot reserve. A credit line is written at each hour change and repeated on the five-minute heartbeat. `daily_cap` is the UTC-day estimate (default 32,000). `monthly_cap` is the free plan's 1,000,000. `month_to_date` is credits since the first of the month. `projected_month` divides month-to-date by the elapsed time since the first recorded credit hour this month, then multiplies by 30 days. Dividing by the calendar day number understated that pace when recording started mid-month. `projected_from_hour` repeats the open hour for every hour of a 30-day month. The queue holds at most 400 signatures. Overflow is counted as dropped and stored in sqlite meta `dropped_messages`, and that total is kept across restarts.
 
-Websocket logs are billed at 2 credits per 0.1 MB. The live set used about 30 MB in the first hour, about 600 credits per hour. Left on every pool, that socket alone is about 432,000 credits per month, before snapshots. Two flags cut it. Snapshots still run for every pool in `pools.json`. Restart the process to pick them up; a running recorder keeps the subscriptions it opened.
+Websocket logs are billed at 2 credits per 0.1 MB. The live set used about 30 MB in the first hour, about 600 credits per hour. Left on every pool, that socket alone is about 432,000 credits per month, before snapshots. Snapshots still run for every pool in `pools.json`.
 
-`--ws-buckets stable,bluechip` opens `logsSubscribe` only for those coin types. Names are `stable`, `bluechip`, `fresh-memecoin`, `high-vol-trending`, `established-midcap`, and `older-memecoin`. Omit the flag, or pass `all`, to stream every tracked pool. Unknown names are logged and skipped.
+`--ws-from-book data/h12-trial-forward.json` opens `logsSubscribe` only for pools with an open slot in that book. The file is reread at each UTC hour, so a new trial entry is subscribed without a restart and a pool whose slots are all closed is dropped from the socket. `--ws-pools` takes a comma-separated address list or a file (one address per line, a JSON array, `{pools:[{address}]}`, or the same H12 book shape). The two flags are unioned. An empty readable book streams no swaps. `--ws program` ignores both and is one program-wide subscription. A missing file keeps the previous set.
+
+`--ws-buckets stable,bluechip` opens `logsSubscribe` only for those coin types when neither pool flag is set. Names are `stable`, `bluechip`, `fresh-memecoin`, `high-vol-trending`, `established-midcap`, and `older-memecoin`. Omit the flag, or pass `all`, to stream every tracked pool. Unknown names are logged and skipped. Bucket and noisiest flags are read at startup; change them by restarting.
 
 `--ws-drop-noisiest 5` ranks pools by notification bytes and, at each UTC hour, unsubscribes that many loudest pools. Dropped pools stay off the socket until the next start. They still get snapshots. The flag does nothing with `--ws program`, which is one subscription.
 
@@ -195,12 +197,14 @@ Disk, under `data/recorder/recorder.sqlite`: a swap row is a few hundred bytes, 
 
 ```bash
 mkdir -p logs
-nohup npm run record >> logs/recorder.log 2>&1 &
+nohup npm run record -- --ws-from-book data/h12-trial-forward.json >> logs/recorder.log 2>&1 &
 # the process writes data/recorder/recorder.pid
 kill "$(cat data/recorder/recorder.pid)"
+nohup npm run record -- --ws-from-book data/h12-trial-forward.json >> logs/recorder.log 2>&1 &
 
 npm run record -- --refresh-pools
 npm run record -- --ws-buckets stable,bluechip,established-midcap
+npm run record -- --ws-pools Addr1,Addr2
 npm run record -- --ws-drop-noisiest 5
 npm run record:export
 npm run record -- --smoke --seconds 360

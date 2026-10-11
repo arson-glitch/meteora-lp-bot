@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -8,11 +8,12 @@ import { creditsFromRpcBody, DEFAULT_RPC_RPS, projectedMonthCredits, reservedSna
 import { ANCHOR_EVENT_CPI, decodeDlmmEvents, decodeEventBytes, selectTracked } from "../src/recorder/decode.js";
 import { eventsFromTransaction } from "../src/recorder/txEvents.js";
 import { exportRecorder } from "../src/recorder/export.js";
-import { formatHour } from "../src/recorder/meter.js";
+import { CreditMeter, formatHour } from "../src/recorder/meter.js";
 import { humanPrice, swapsToCandles } from "../src/recorder/prices.js";
 import type { TrackedPool } from "../src/recorder/pools.js";
 import { redact } from "../src/recorder/redact.js";
-import { noisiestAddresses, parseWsBuckets, poolsForWebsocket } from "../src/recorder/wsFilter.js";
+import { nextWebsocketAddresses, noisiestAddresses, parseWsBuckets, poolsForWebsocket } from "../src/recorder/wsFilter.js";
+import { addressesFromText, loadWsAddresses, loadWsTracked } from "../src/recorder/wsPools.js";
 import { packBins } from "../src/recorder/snapshot.js";
 import { liquidityRow, openStore, swapRow } from "../src/recorder/store.js";
 
@@ -160,7 +161,8 @@ describe("recorder budget", () => {
     expect(wsCredits(0)).toBe(0);
     expect(creditsFromRpcBody(JSON.stringify({ method: "getAccountInfo" }))).toBe(1);
     expect(creditsFromRpcBody(JSON.stringify([{ method: "getProgramAccounts" }, { method: "getSlot" }]))).toBe(11);
-    expect(projectedMonthCredits(100, Date.UTC(2026, 9, 10))).toBeCloseTo(300);
+    const noon = Date.UTC(2026, 9, 10);
+    expect(projectedMonthCredits(100, noon, noon - 10 * 86_400_000)).toBeCloseTo(300);
     const reserved = reservedSnapshotCredits({
       pools: 2,
       snapshotMinutes: 15,
@@ -249,23 +251,90 @@ describe("recorder store and export", () => {
 
 describe("credit hour line", () => {
   it("includes rpc credits and websocket credits", () => {
+    const now = Date.UTC(2026, 9, 10, 13);
     const line = formatHour({
       hourStart: Date.UTC(2026, 9, 10, 13),
       rpcCalls: 4,
       rpcCredits: 4,
       wsMessages: 2,
       wsBytes: 100_000,
-    }, 10, 32_000, Date.UTC(2026, 9, 10, 13));
+    }, 10, 32_000, now, now - 10 * 86_400_000);
     expect(line).toContain("rpc_credits=4");
     expect(line).toContain("ws_credits=2.00");
     expect(line).toContain("daily_cap=32000");
+    expect(line).toContain("monthly_cap=1000000");
     expect(line).toContain("projected_month=30");
     expect(line).toContain("projected_from_hour=4320");
     expect(DEFAULT_RPC_RPS).toBe(4);
   });
+
+  it("projects the month from the recording span, not the calendar day", () => {
+    const now = Date.UTC(2026, 9, 11, 8);
+    const since = Date.UTC(2026, 9, 10, 0);
+    expect(projectedMonthCredits(36_000, now, since)).toBeCloseTo(810_000);
+    expect(projectedMonthCredits(36_000, now)).not.toBeCloseTo((36_000 / 11) * 30);
+  });
+
+  it("labels the daily cap separately from month-to-date", () => {
+    const dir = mkdtempSync(join(tmpdir(), "credits-"));
+    const store = openStore(join(dir, "recorder.sqlite"));
+    const since = Date.UTC(2026, 9, 10, 0);
+    store.saveHour({ hourStart: since, rpcCalls: 36_000, rpcCredits: 36_000, wsMessages: 0, wsBytes: 0 });
+    const now = Date.UTC(2026, 9, 11, 8);
+    const meter = new CreditMeter(store, 32_000, () => undefined, now);
+    const line = meter.snapshotLine(now);
+    expect(line).toContain("daily_cap=32000");
+    expect(line).toContain("month_to_date=36000.0");
+    expect(line).toContain("monthly_cap=1000000");
+    expect(line).toContain("projected_month=810000");
+    expect(line.includes(" cap=")).toBe(false);
+    expect(line.includes(" month=")).toBe(false);
+    store.setDroppedCount(7);
+    expect(store.droppedCount()).toBe(7);
+    store.close();
+  });
 });
 
 describe("websocket volume", () => {
+  it("streams the H12 book's open pools and refreshes that set", () => {
+    const open = "So11111111111111111111111111111111111111112";
+    const closed = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+    const extra = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
+    const book = {
+      kind: "h12-trial",
+      slots: [
+        { coinType: "older-memecoin", position: { status: "open", poolAddress: open, poolName: "OPEN-SOL", binStep: 80 } },
+        { coinType: "older-memecoin", position: { status: "closed", poolAddress: closed, poolName: "CLOSED-SOL", binStep: 80 } },
+      ],
+    };
+    expect(addressesFromText(JSON.stringify(book))).toEqual([open]);
+    expect(addressesFromText(`${open},${extra}`)).toEqual([open, extra]);
+    const dir = mkdtempSync(join(tmpdir(), "ws-pools-"));
+    const path = join(dir, "h12.json");
+    writeFileSync(path, JSON.stringify(book));
+    expect(loadWsAddresses(path)).toEqual([open]);
+    expect(loadWsTracked(path).map((pool) => pool.name)).toEqual(["OPEN-SOL"]);
+    const tracked = ["snap-only", open];
+    expect(nextWebsocketAddresses({
+      mode: "mentions",
+      all: tracked,
+      bucketFiltered: tracked,
+      explicit: loadWsAddresses(path),
+      dropped: new Set(),
+    })).toEqual([open]);
+    writeFileSync(path, JSON.stringify({
+      ...book,
+      slots: [...book.slots, { coinType: "bluechip", position: { status: "open", poolAddress: extra, poolName: "NEW-SOL", binStep: 10 } }],
+    }));
+    expect(nextWebsocketAddresses({
+      mode: "mentions",
+      all: tracked,
+      bucketFiltered: tracked,
+      explicit: loadWsAddresses(path),
+      dropped: new Set([open]),
+    })).toEqual([extra]);
+  });
+
   it("keeps only named buckets and ranks the loudest pools", () => {
     const parsed = parseWsBuckets("stable, no-such, bluechip");
     expect(parsed.unknown).toEqual(["no-such"]);
