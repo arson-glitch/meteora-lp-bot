@@ -1,3 +1,4 @@
+import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { discoverTournamentPools } from "./tournament/discover.js";
 import { runHighVolEdge } from "./tournament/edge.js";
@@ -13,7 +14,8 @@ import { loadStrategyBundle } from "./strategy/loader.js";
 import { runDaily } from "./tournament/daily.js";
 import { markForwardBook, summarizeForward } from "./tournament/forward.js";
 import { runBrief3 } from "./tournament/brief3.js";
-import { runH12Stress } from "./tournament/h12stress.js";
+import { runH12Stress, runH12TakeProfit } from "./tournament/h12stress.js";
+import { renderH12TpTrials, syncH12TpBooks } from "./tournament/h12trial.js";
 import { defaultDashboardPaths, writeDashboard } from "./tournament/dashboard.js";
 import { validateFeesFile } from "./tournament/validateFees.js";
 import { runTournament } from "./tournament/run.js";
@@ -170,6 +172,35 @@ async function main(): Promise<void> {
     console.log(path);
     return;
   }
+  if (cli.command === "h12-tp") {
+    const reportsDir = resolve(process.cwd(), "reports");
+    const cacheDir = resolve(process.cwd(), "data/h12");
+    const onProgress = (message: string) => console.log(message);
+    const path = await runH12TakeProfit({ reportsDir, cacheDir, onProgress });
+    console.log(path);
+    const nowMs = Date.now();
+    console.log("Opening H12 take-profit paper sub-books");
+    const universe = await discoverTournamentPools(nowMs);
+    const price = await solPriceUsd(universe);
+    const statuses = await syncH12TpBooks({
+      cacheDir,
+      universe,
+      nowMs,
+      solPriceUsd: price,
+      rug: {
+        failScore: config.rugFailScore,
+        minHolders: config.rugMinHolders,
+        minTvlUsd: config.limits.minTvlUsd,
+        failClosed: config.rugFailClosed,
+      },
+      onProgress,
+    });
+    const trialPath = resolve(reportsDir, `h12-tp-trial-${new Date(nowMs).toISOString().slice(0, 10)}.md`);
+    mkdirSync(reportsDir, { recursive: true });
+    writeFileSync(trialPath, `# H12 take-profit paper trial ${new Date(nowMs).toISOString()}\n\nPaper only. SOL $${price.toFixed(2)}.\n\n${renderH12TpTrials(statuses)}`);
+    console.log(trialPath);
+    return;
+  }
   if (cli.command === "brief3") {
     const path = await runBrief3({
       reportsDir: resolve(process.cwd(), "reports"),
@@ -269,6 +300,7 @@ function helpText(): string {
     "  tournament-mark  Mark the forward paper book against live pools",
     "  daily            Mark forward positions, open new paper trials, rerun the tournament",
     "  h12-stress       Walk-forward stress test of the adaptive-width rule",
+    "  h12-tp           H12 take-profit variants: backtest, then paper sub-books",
     "  validate-fees    Compare recorder swaps and bin snapshots with the fee models",
     "  dashboard        Write the offline paper dashboard",
     "  high-vol-edge    Reprice the frozen high-vol strategy with costs and active-bin fees",

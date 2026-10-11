@@ -175,6 +175,112 @@ export function liquidationCost(params: {
   };
 }
 
+/**
+ * Same rent and transaction fees as `liquidationCost`. Every non-SOL balance
+ * is sold to SOL: inventory plus unclaimed fees in that token. A SOL balance
+ * is kept. When the other leg is not SOL, the quote inventory is sold to SOL
+ * against the $10M reserve after the pool walk. On a SOL pair this matches
+ * the single-leg liquidation swap.
+ */
+export function liquidationCostAllNonSol(params: {
+  pool: DiscoveredPool;
+  minBinId: number;
+  maxBinId: number;
+  activeBinId: number;
+  binStep: number;
+  rebalanceCount: number;
+  liquidityBins: number;
+  solPriceUsd: number;
+  amountX: number;
+  amountY: number;
+  priceXUsd: number;
+  priceYUsd: number;
+}): ExitCost {
+  const rent = liquidationCost({
+    pool: params.pool,
+    minBinId: params.minBinId,
+    maxBinId: params.maxBinId,
+    activeBinId: params.activeBinId,
+    binStep: params.binStep,
+    rebalanceCount: params.rebalanceCount,
+    liquidityBins: params.liquidityBins,
+    solPriceUsd: params.solPriceUsd,
+    tokenLeg: null,
+    tokenAmount: 0,
+    tokenPriceUsd: 0,
+    otherPriceUsd: 0,
+  });
+  const swap = swapAllNonSolToSol({
+    pool: params.pool,
+    binStep: params.binStep,
+    activeBinId: params.activeBinId,
+    liquidityBins: params.liquidityBins,
+    amountX: params.amountX,
+    amountY: params.amountY,
+    priceXUsd: params.priceXUsd,
+    priceYUsd: params.priceYUsd,
+  });
+  return {
+    ...rent,
+    pnlCostUsd: rent.txFeeUsd + rent.sunkBinArrayUsd + swap.slippageUsd,
+    exitSwapUsd: swap.proceedsUsd,
+    exitSlippageUsd: swap.slippageUsd,
+  };
+}
+
+export function swapAllNonSolToSol(params: {
+  pool: Pick<DiscoveredPool, "baseFeePct" | "dynamicFeePct" | "tokenX" | "tokenY" | "tvlUsd">;
+  binStep: number;
+  activeBinId: number;
+  liquidityBins: number;
+  amountX: number;
+  amountY: number;
+  priceXUsd: number;
+  priceYUsd: number;
+}): { proceedsUsd: number; slippageUsd: number } {
+  const xSol = isSolToken(params.pool.tokenX);
+  const ySol = isSolToken(params.pool.tokenY);
+  let proceedsUsd = 0;
+  let slippageUsd = 0;
+  const hold = (amount: number, price: number) => {
+    if (amount > 0 && price > 0) proceedsUsd += amount * price;
+  };
+  if (xSol) hold(params.amountX, params.priceXUsd);
+  if (ySol) hold(params.amountY, params.priceYUsd);
+  const sell = (leg: "x" | "y") => {
+    const swap = swapTokenToSol({
+      pool: params.pool,
+      binStep: params.binStep,
+      activeBinId: params.activeBinId,
+      liquidityBins: params.liquidityBins,
+      tokenLeg: leg,
+      tokenAmount: leg === "x" ? params.amountX : params.amountY,
+      tokenPriceUsd: leg === "x" ? params.priceXUsd : params.priceYUsd,
+      otherPriceUsd: leg === "x" ? params.priceYUsd : params.priceXUsd,
+    });
+    proceedsUsd += swap.proceedsUsd;
+    slippageUsd += swap.slippageUsd;
+  };
+  if (xSol && ySol) return { proceedsUsd, slippageUsd };
+  if (!xSol && ySol) {
+    sell("x");
+    return { proceedsUsd, slippageUsd };
+  }
+  if (xSol && !ySol) {
+    sell("y");
+    return { proceedsUsd, slippageUsd };
+  }
+  const leg = tokenLegToSol(params.pool.tokenX, params.pool.tokenY) ?? "x";
+  sell(leg);
+  const otherAmount = leg === "x" ? params.amountY : params.amountX;
+  const otherPrice = leg === "x" ? params.priceYUsd : params.priceXUsd;
+  const mark = otherAmount > 0 && otherPrice > 0 ? otherAmount * otherPrice : 0;
+  const sol = stableToSolProceeds(mark);
+  proceedsUsd += sol;
+  slippageUsd += Math.max(0, mark - sol);
+  return { proceedsUsd, slippageUsd };
+}
+
 export function tokenLegToSol(tokenX: { address: string; symbol: string }, tokenY: { address: string; symbol: string }): "x" | "y" | null {
   const xSol = isSolToken(tokenX);
   const ySol = isSolToken(tokenY);

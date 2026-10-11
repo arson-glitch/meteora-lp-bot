@@ -28,7 +28,7 @@ import {
 import { FROZEN_STRATEGY_FILE } from "./frozen.js";
 import { syncFrozenHighVolBook, type FrozenBookStatus } from "./frozenBook.js";
 import { defaultDashboardPaths, writeDashboard } from "./dashboard.js";
-import { H12_TRIAL_BOOK, H12_TRIAL_FILE, renderH12Trial, syncH12TrialBook, type H12TrialStatus } from "./h12trial.js";
+import { H12_TRIAL_BOOK, H12_TRIAL_FILE, renderH12TpTrials, renderH12Trial, syncH12TpBooks, syncH12TrialBook, type H12TrialStatus } from "./h12trial.js";
 import { gridStrategies } from "./grid.js";
 import { forwardStrategySnapshot, type ForwardStrategySnapshot, type LeaderStudy } from "./leaderStudy.js";
 import { rugGatePools, type RugHit } from "./rugGate.js";
@@ -117,10 +117,19 @@ export async function runDaily(options: DailyOptions): Promise<string> {
     onProgress: log,
   });
 
+  const h12CacheDir = options.h12CacheDir ?? join(process.cwd(), "data/h12");
   const h12 = await syncH12TrialBook({
     path: options.h12BookPath ?? join(process.cwd(), H12_TRIAL_BOOK),
     frozenPath: options.h12FrozenPath ?? join(process.cwd(), H12_TRIAL_FILE),
-    cacheDir: options.h12CacheDir ?? join(process.cwd(), "data/h12"),
+    cacheDir: h12CacheDir,
+    universe,
+    nowMs,
+    solPriceUsd: frozen.solPriceUsd,
+    rug: options.rug,
+    onProgress: log,
+  });
+  const h12Tp = await syncH12TpBooks({
+    cacheDir: h12CacheDir,
     universe,
     nowMs,
     solPriceUsd: frozen.solPriceUsd,
@@ -166,6 +175,7 @@ export async function runDaily(options: DailyOptions): Promise<string> {
       noFresh,
       poolTypes: new Map(history.pools.map((pool) => [pool.address, pool.coinType])),
       h12,
+      h12Tp,
     }),
   );
   const dash = await writeDashboard({
@@ -233,6 +243,7 @@ function renderDaily(params: {
   noFresh: CoinType[];
   poolTypes: Map<string, string>;
   h12: H12TrialStatus;
+  h12Tp: H12TrialStatus[];
 }): string {
   const lines: string[] = [];
   lines.push(`# Paper daily ${params.generatedAt.slice(0, 10)}`);
@@ -312,6 +323,9 @@ function renderDaily(params: {
   lines.push(renderRugs("Frozen high-vol opens", params.frozen.rugs));
   lines.push(renderH12Trial(params.h12));
   lines.push(renderRugs("H12 trial opens", params.h12.rugs));
+  lines.push(renderH12TpTrials(params.h12Tp));
+  const tpRugs = params.h12Tp[0]?.rugs ?? [];
+  if (tpRugs.length > 0) lines.push(renderRugs("H12 take-profit opens", tpRugs));
   lines.push("");
   return lines.join("\n");
 }

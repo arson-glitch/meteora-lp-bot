@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
 import type { Candle } from "../src/tournament/candles.js";
-import { h12TrialHash, loadH12Trial, rankH12Candidates } from "../src/tournament/h12trial.js";
+import { H12_TP_LEVELS, h12TpTrialPath, h12TrialHash, loadH12TpTrial, loadH12Trial, rankH12Candidates } from "../src/tournament/h12trial.js";
 import { compareFeeModels } from "../src/tournament/validateFees.js";
 import { pool } from "./fixtures.js";
 
@@ -29,6 +29,29 @@ describe("H12 paper trial", () => {
     expect(trial.parameterHash).toBe(h12TrialHash(trial.rule));
     expect(trial.strategy.shape).toBe("Spot");
     expect(trial.strategy.exit.outOfRangeTimeoutHours).toBe(96);
+    expect(trial.rule.takeProfitPct).toBeNull();
+    expect(trial.parameterHash).toBe("dcfc7daa72a1e243b8175c861a9ab01f4d69cce7a8b84a32be17b26032ef34e8");
+  });
+
+  it("keeps take-profit variants in their own files", () => {
+    const hashes = new Set<string>();
+    for (const level of H12_TP_LEVELS) {
+      const path = h12TpTrialPath(level);
+      const trial = loadH12TpTrial(path);
+      expect(trial.status).toBe("trial, not promoted");
+      expect(trial.rule.takeProfitPct).toBe(level);
+      expect(trial.rule.takeProfitAfterCosts).toBe(true);
+      expect(trial.rule.gamma).toBe(0.001);
+      expect(trial.rule.topFraction).toBe(0.2);
+      expect(trial.rule.stopLossPct).toBe(0.18);
+      expect(trial.rule.outOfRangeTimeoutHours).toBe(96);
+      expect(trial.strategy.exit.takeProfitPct).toBe(level);
+      expect(trial.parameterHash).not.toBe("dcfc7daa72a1e243b8175c861a9ab01f4d69cce7a8b84a32be17b26032ef34e8");
+      expect(hashes.has(trial.parameterHash)).toBe(false);
+      hashes.add(trial.parameterHash);
+      expect(() => loadH12Trial(path)).toThrow(/take-profit/);
+    }
+    expect(h12TrialHash()).toBe("dcfc7daa72a1e243b8175c861a9ab01f4d69cce7a8b84a32be17b26032ef34e8");
   });
 
   it("scores only bars before the entry day", () => {

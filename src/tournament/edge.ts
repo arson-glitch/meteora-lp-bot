@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { getJson, sleep } from "../http.js";
 import { assumedLiquidityBins } from "../math/activeBin.js";
-import { COST_MODEL_VERSION, liquidationCost, tokenLegToSol } from "../math/costs.js";
+import { COST_MODEL_VERSION, liquidationCost, liquidationCostAllNonSol, tokenLegToSol } from "../math/costs.js";
 import { fetchDlmmPool } from "../scanner/meteora.js";
 import type { StrategyConfig } from "../strategy/schema.js";
 import type { CoinType, DiscoveredPool } from "../types.js";
@@ -151,10 +151,11 @@ export function withCosts(
   solPriceUsd: number,
   liquidityBins: number,
   costScale = 1,
+  swap: "leg" | "all-non-sol" = "leg",
 ): TrialResult {
   const terminal = trial.terminal;
   if (!terminal) return trial;
-  const cost = costForTerminal(terminal, pool, solPriceUsd, liquidityBins);
+  const cost = costForTerminal(terminal, pool, solPriceUsd, liquidityBins, swap);
   const scale = costScale > 0 ? costScale : 1;
   const pnlCostUsd = cost.sunkBinArrayUsd + (cost.exitSlippageUsd + cost.txFeeUsd) * scale;
   const equity = trial.equityUsd - pnlCostUsd;
@@ -183,7 +184,29 @@ export function withCosts(
   };
 }
 
-function costForTerminal(terminal: TerminalState, pool: DiscoveredPool, solPriceUsd: number, liquidityBins: number) {
+function costForTerminal(
+  terminal: TerminalState,
+  pool: DiscoveredPool,
+  solPriceUsd: number,
+  liquidityBins: number,
+  swap: "leg" | "all-non-sol" = "leg",
+) {
+  if (swap === "all-non-sol") {
+    return liquidationCostAllNonSol({
+      pool,
+      minBinId: terminal.minBinId,
+      maxBinId: terminal.maxBinId,
+      activeBinId: terminal.activeBinId,
+      binStep: terminal.binStep,
+      rebalanceCount: terminal.rebalanceCount,
+      liquidityBins,
+      solPriceUsd,
+      amountX: terminal.amountX + terminal.feesX,
+      amountY: terminal.amountY + terminal.feesY,
+      priceXUsd: terminal.priceXUsd,
+      priceYUsd: terminal.priceYUsd,
+    });
+  }
   const leg = tokenLegToSol(terminal.tokenX, terminal.tokenY);
   const tokenAmount = leg === "x"
     ? terminal.amountX + terminal.feesX

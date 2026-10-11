@@ -22,6 +22,7 @@
     "record:export": "MODE=paper tsx src/recorder/cli.ts export",
     "brief3": "MODE=paper tsx src/index.ts brief3",
     "h12-stress": "MODE=paper tsx src/index.ts h12-stress",
+    "h12-tp": "MODE=paper tsx src/index.ts h12-tp",
     "validate-fees": "MODE=paper tsx src/index.ts validate-fees",
     "dashboard": "MODE=paper tsx src/index.ts dashboard",
     "test": "vitest run",

@@ -57,6 +57,12 @@ export interface StrategyConfig {
     rebalanceEdgeBins: number;
     stopLossPct: number;
     takeProfitPct: number | null;
+    /**
+     * When true, `takeProfitPct` is compared with equity after exit slippage,
+     * transaction fees, and non-refundable bin-array rent. Omitted means the
+     * trigger uses mark-to-market PnL.
+     */
+    takeProfitAfterCosts?: boolean;
     maxHoldHours: number | null;
     /**
      * While the position is younger than this, an out-of-range close is
@@ -112,6 +118,9 @@ export function parseStrategy(raw: unknown, filename: string): StrategyConfig {
   if (onOutOfRange !== "close" && onOutOfRange !== "rebalance") {
     throw new Error(`${filename}: onOutOfRange must be close or rebalance`);
   }
+  if (exit.takeProfitAfterCosts !== undefined && exit.takeProfitAfterCosts !== true && exit.takeProfitAfterCosts !== false) {
+    throw new Error(`${filename}: takeProfitAfterCosts must be a boolean`);
+  }
   const stopLossPct = requireNumber(exit, "stopLossPct", filename);
   if (stopLossPct <= 0 || stopLossPct >= 1) {
     throw new Error(`${filename}: stopLossPct must be a fraction between 0 and 1`);
@@ -152,6 +161,7 @@ export function parseStrategy(raw: unknown, filename: string): StrategyConfig {
       takeProfitPct: exit.takeProfitPct === null || exit.takeProfitPct === undefined
         ? null
         : requireNumber(exit, "takeProfitPct", filename),
+      ...(exit.takeProfitAfterCosts === true ? { takeProfitAfterCosts: true } : {}),
       maxHoldHours: exit.maxHoldHours === null || exit.maxHoldHours === undefined
         ? null
         : requireNumber(exit, "maxHoldHours", filename),

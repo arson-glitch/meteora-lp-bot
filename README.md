@@ -117,7 +117,9 @@ npm run daily
 
 `npm run h12-stress` replays the adaptive-width rule on a rolling walk-forward of the discovered universe. It uses free Meteora candles only and writes `reports/h12-stress-YYYY-MM-DD.md`.
 
-`strategies/frozen/h12-trial-2026-10-10.json` is a paper trial of that rule, labelled trial, not promoted. `npm run daily` marks `data/h12-trial-forward.json` and opens new pools that pass the pre-entry top 20% fee quintile. Each position logs crossed-bin fees, active-bin fees, exit costs, versus cash, and versus holding the token. The width is computed at entry. The file's hash covers the rule.
+`npm run h12-tp` replays the same walk with take-profit at 10%, 15%, 25%, and 40% of the deposit, measured after exit costs. On that exit the non-SOL inventory and unclaimed fees are swapped to SOL. It writes `reports/h12-tp-YYYY-MM-DD.md` and opens four paper sub-books. Promotion gates are unchanged. Nothing in that command is promoted.
+
+`strategies/frozen/h12-trial-2026-10-10.json` is a paper trial of that rule, labelled trial, not promoted. `npm run daily` marks `data/h12-trial-forward.json` and opens new pools that pass the pre-entry top 20% fee quintile. Each position logs crossed-bin fees, active-bin fees, exit costs, versus cash, and versus holding the token. The width is computed at entry. The file's hash covers the rule. The same run marks and opens `strategies/frozen/h12-trial-tp10-2026-10-11.json` and the 15%, 25%, and 40% files into their own books under `data/`. Those files do not change the original trial hash.
 
 `npm run validate-fees -- --db /path/to/recorder.sqlite` compares the box recorder's swap fees and per-bin snapshots with the crossed-bin and active-bin models and writes which one is closer.
 

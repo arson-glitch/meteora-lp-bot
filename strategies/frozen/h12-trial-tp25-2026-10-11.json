@@ -1,0 +1,57 @@
+{
+  "version": "2026-10-11",
+  "frozenAt": "2026-10-11T16:30:00.000Z",
+  "status": "trial, not promoted",
+  "sourceStrategyId": "h12-trial",
+  "parameterHash": "23d5d54d4ecc8e54180acbcae712997e68e2e417214024b54a592dd3d8654cbd",
+  "costModelVersion": "2026-10-09",
+  "note": "trial, not promoted. Paper-only take-profit variant of the H12 trial. Same rule as h12-trial-2026-10-10 except a 25% take-profit measured on position value after exit costs. On that exit the non-SOL inventory and unclaimed fees are swapped to SOL. Not a promoted strategy.",
+  "rule": {
+    "gamma": 0.001,
+    "topFraction": 0.2,
+    "lookbackDays": 14,
+    "sizeUsd": 250,
+    "score": "fee-tvl-over-abs-price-change",
+    "shape": "Spot",
+    "sidedness": "two-sided",
+    "onOutOfRange": "close",
+    "outOfRangeTimeoutHours": 96,
+    "stopLossPct": 0.18,
+    "takeProfitPct": 0.25,
+    "status": "trial, not promoted",
+    "takeProfitAfterCosts": true
+  },
+  "strategy": {
+    "id": "h12-trial-tp25",
+    "name": "H12 trial 25% take-profit",
+    "description": "Paper trial. Two-sided Spot. Width is set at entry from the pre-registered gamma. 96-hour out-of-range timeout, 18% stop, and a 25% take-profit after exit costs.",
+    "placeholder": false,
+    "placeholderNote": "trial, not promoted. Not a tournament winner.",
+    "docs": [
+      "https://docs.meteora.ag/core-products/dlmm/strategies-and-use-cases",
+      "https://docs.meteora.ag/core-products/dlmm/formulas",
+      "https://docs.meteora.ag/core-products/dlmm/what-is-dlmm"
+    ],
+    "notes": "trial, not promoted. Do not treat this file as a promoted strategy.",
+    "product": "dlmm",
+    "shape": "Spot",
+    "binsBelow": 1,
+    "binsAbove": 1,
+    "sidedness": "two-sided",
+    "quoteSide": "two-sided",
+    "coinType": null,
+    "priority": 0,
+    "manualOnly": true,
+    "requires": {},
+    "when": [],
+    "exit": {
+      "onOutOfRange": "close",
+      "rebalanceEdgeBins": 0,
+      "stopLossPct": 0.18,
+      "takeProfitPct": 0.25,
+      "takeProfitAfterCosts": true,
+      "maxHoldHours": null,
+      "outOfRangeTimeoutHours": 96
+    }
+  }
+}

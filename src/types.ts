@@ -118,6 +118,12 @@ export interface PaperPosition {
   rebalanceCount: number;
   stopLossPct: number;
   takeProfitPct: number | null;
+  /**
+   * When true, take-profit is position value after exit costs versus the
+   * deposit. The grid's take-profit cells leave this unset and still use
+   * mark-to-market PnL.
+   */
+  takeProfitAfterCosts?: boolean;
   onOutOfRange: "close" | "rebalance";
   rebalanceEdgeBins: number;
   maxHoldHours: number | null;

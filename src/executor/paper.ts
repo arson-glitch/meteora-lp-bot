@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { activeBinFeeUsd, assumedLiquidityBins, crossedBinFeeUsd } from "../math/activeBin.js";
 import { binIdFromPrice, priceFromBinId } from "../math/bins.js";
-import { clipRangeToBinArray } from "../math/costs.js";
+import { clipRangeToBinArray, isSolToken, liquidationCostAllNonSol } from "../math/costs.js";
 import { allocateByWeight, strategyBinWeights } from "../math/distribution.js";
 import { estimateLpFeesUsd } from "../math/fees.js";
 import { layoutForStrategy } from "../strategy/sides.js";
@@ -108,6 +108,7 @@ export function openPaperPosition(params: {
     rebalanceCount: 0,
     stopLossPct: params.strategy.exit.stopLossPct,
     takeProfitPct: params.strategy.exit.takeProfitPct,
+    ...(params.strategy.exit.takeProfitAfterCosts === true ? { takeProfitAfterCosts: true } : {}),
     onOutOfRange: params.strategy.exit.onOutOfRange,
     rebalanceEdgeBins: params.strategy.exit.rebalanceEdgeBins,
     maxHoldHours: params.strategy.exit.maxHoldHours,
@@ -142,6 +143,8 @@ export function advancePosition(params: {
    */
   feeModel?: "tvl-share" | "active-bin" | "crossed-bins";
   liquidityBins?: number;
+  /** SOL/USD used for transaction fees and bin-array rent on an after-cost take-profit. */
+  solPriceUsd?: number;
 }): AdvanceResult {
   const position = structuredClone(params.position);
   const events: AdvanceResult["events"] = [];
@@ -209,9 +212,22 @@ export function advancePosition(params: {
     events.push({ type: "close", detail: `stop-loss at ${(pnlPct * 100).toFixed(2)}%` });
     return { position, events };
   }
-  if (position.takeProfitPct !== null && pnlPct >= position.takeProfitPct) {
+  const takeProfitPct = position.takeProfitAfterCosts
+    ? afterCostPnlPct({
+        position,
+        pool: params.pool,
+        solPriceUsd: solPriceFor(params.pool, params.solPriceUsd),
+        liquidityBins,
+      })
+    : pnlPct;
+  if (position.takeProfitPct !== null && takeProfitPct >= position.takeProfitPct) {
     closePosition(position, params.nowMs, "take-profit");
-    events.push({ type: "close", detail: `take-profit at ${(pnlPct * 100).toFixed(2)}%` });
+    events.push({
+      type: "close",
+      detail: position.takeProfitAfterCosts
+        ? `take-profit at ${(takeProfitPct * 100).toFixed(2)}% after exit costs`
+        : `take-profit at ${(takeProfitPct * 100).toFixed(2)}%`,
+    });
     return { position, events };
   }
   const heldHours = (params.nowMs - Date.parse(position.openedAt)) / 3_600_000;
@@ -420,6 +436,43 @@ function outOfRangeTimedOut(position: PaperPosition, nowMs: number): boolean {
   if (!position.outOfRangeSince) position.outOfRangeSince = position.updatedAt;
   const elapsedHours = (nowMs - Date.parse(position.outOfRangeSince)) / 3_600_000;
   return elapsedHours >= timeout;
+}
+
+/**
+ * (mark + fees − exit slippage − transaction fees − sunk bin-array rent − deposit) / deposit.
+ * The swap sells every non-SOL balance, including unclaimed fees in that token.
+ */
+export function afterCostPnlPct(params: {
+  position: PaperPosition;
+  pool: DiscoveredPool;
+  solPriceUsd: number;
+  liquidityBins: number;
+}): number {
+  if (!(params.position.depositedUsd > 0)) return 0;
+  const amounts = inventoryAmounts(params.position);
+  const cost = liquidationCostAllNonSol({
+    pool: params.pool,
+    minBinId: params.position.minBinId,
+    maxBinId: params.position.maxBinId,
+    activeBinId: params.position.activeBinId,
+    binStep: params.position.binStep,
+    rebalanceCount: params.position.rebalanceCount,
+    liquidityBins: params.liquidityBins,
+    solPriceUsd: params.solPriceUsd,
+    amountX: amounts.amountX + params.position.feesX,
+    amountY: amounts.amountY + params.position.feesY,
+    priceXUsd: params.position.priceXUsd,
+    priceYUsd: params.position.priceYUsd,
+  });
+  const equity = markValueUsd(params.position) + params.position.claimedFeesUsd + params.position.feesUsd - cost.pnlCostUsd;
+  return (equity - params.position.depositedUsd) / params.position.depositedUsd;
+}
+
+function solPriceFor(pool: DiscoveredPool, given: number | undefined): number {
+  if (given !== undefined && given > 0) return given;
+  if (isSolToken(pool.tokenX) && pool.tokenX.priceUsd > 0) return pool.tokenX.priceUsd;
+  if (isSolToken(pool.tokenY) && pool.tokenY.priceUsd > 0) return pool.tokenY.priceUsd;
+  return 0;
 }
 
 export function lpFeesPerHour(pool: DiscoveredPool): number {

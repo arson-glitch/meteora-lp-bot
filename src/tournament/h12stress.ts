@@ -16,6 +16,7 @@ import { gridStrategies } from "./grid.js";
 import { splitCoinKeys } from "./holdout.js";
 import { tokenHoldUsd } from "./leaderStudy.js";
 import { scoreTrials } from "./score.js";
+import { H12_TP_LEVELS } from "./h12trial.js";
 import { quantile } from "./stats.js";
 import {
   activeBinTvlShare,
@@ -310,6 +311,144 @@ export async function runH12Stress(options: {
   return path;
 }
 
+/**
+ * Same walk, same top-20% entries, and the same width rule as the H12 stress
+ * test. The only change is an after-cost take-profit. Does not promote and
+ * does not write a winner file.
+ */
+export async function runH12TakeProfit(options: {
+  reportsDir: string;
+  cacheDir: string;
+  nowMs?: number;
+  onProgress?: (message: string) => void;
+}): Promise<string> {
+  const nowMs = options.nowMs ?? Date.now();
+  const log = options.onProgress ?? (() => {});
+  const end = Math.floor(nowMs / 1000);
+  log("Discovering the tournament universe");
+  const universe = await discoverTournamentPools(nowMs);
+  const missingPrice = universe.filter((pool) => pool.market.priceChangeH24Pct === null);
+  const enrich = missingPrice.slice(0, 150);
+  if (enrich.length > 0) {
+    log(`Enriching price change for ${enrich.length} of ${missingPrice.length} pools that lack one`);
+    await enrichPriceChange(enrich);
+  }
+  const sol = await solPriceUsd(universe);
+  log(`SOL $${sol.toFixed(2)}. Universe ${universe.length}. Reading free Meteora candles`);
+  const ready = await loadReady(universe, options.cacheDir, end, nowMs, log);
+  const studied = ready.filter((row) => row.daily.candles.length >= H12_LOOKBACK_DAYS + H12_HORIZON_DAYS);
+  const entries = prepare(studied, (row) => row.daily, MAIN_SPEC);
+  log(`Walk-forward entries ${entries.length} on ${new Set(entries.map((row) => row.key)).size} coins`);
+  const base = mustStrategy("grid-spot-broad-two-stay");
+  const cache = new Map<string, TrialResult | null>();
+  const play = makePlayer(base, sol, cache, log);
+  const primaryIds = passSet(entries, PRIMARY_TOP, "h2");
+  const levels: Array<number | null> = [null, ...H12_TP_LEVELS];
+  const books: Array<{ level: number | null; feeModel: "crossed-bins" | "active-bin"; book: Outcome[] }> = [];
+  for (const level of levels) {
+    for (const feeModel of ["crossed-bins", "active-bin"] as const) {
+      const label = level === null ? "h12" : `h12-tp${Math.round(level * 100)}`;
+      log(`Replaying ${label} ${feeModel}`);
+      books.push({
+        level,
+        feeModel,
+        book: play(entries, primaryIds, {
+          gamma: PRIMARY_GAMMA,
+          size: PRIMARY_SIZE,
+          feeModel,
+          path: "wick",
+          costScale: 1,
+          label,
+          takeProfitPct: level,
+          swap: "all-non-sol",
+        }),
+      });
+    }
+  }
+  const markdown = renderTakeProfit({ nowMs, sol, universe: universe.length, entries, primaryIds, books });
+  mkdirSync(options.reportsDir, { recursive: true });
+  const path = join(options.reportsDir, `h12-tp-${new Date(nowMs).toISOString().slice(0, 10)}.md`);
+  writeFileSync(path, markdown);
+  log(`Wrote ${path}`);
+  return path;
+}
+
+function renderTakeProfit(input: {
+  nowMs: number;
+  sol: number;
+  universe: number;
+  entries: Prepared[];
+  primaryIds: Set<string>;
+  books: Array<{ level: number | null; feeModel: "crossed-bins" | "active-bin"; book: Outcome[] }>;
+}): string {
+  const lines: string[] = [];
+  const holdRows = (book: Outcome[]) => book.filter(isOos).filter((row) => !row.withdrew).map((row) => {
+    const hold = tokenHoldUsd(row.entry.pool, row.entry.forward, PRIMARY_SIZE);
+    return { key: row.entry.key, net: hold.usd - PRIMARY_SIZE };
+  });
+  lines.push(`# H12 take-profit variants ${new Date(input.nowMs).toISOString().slice(0, 10)}`);
+  lines.push("");
+  lines.push(`Paper only. Spot DLMM inventory. No perps, no borrowed leverage, no lending. Deposit $${PRIMARY_SIZE}. SOL $${input.sol.toFixed(2)}.`);
+  lines.push("");
+  lines.push("These variants keep the pre-registered H12 rule: γ=0.001, top 20% of that day's train-coin fee/TVL over absolute price change, two-sided Spot, 96-hour out-of-range timeout, 18% stop. The stop is still mark-to-market. The only added exit is a take-profit at 10%, 15%, 25%, or 40% of the deposit, measured on position value after exit slippage, transaction fees, and non-refundable bin-array rent. On that exit every non-SOL balance, including unclaimed fees in that token, is swapped to SOL. A SOL balance is not swapped. When neither leg is SOL, the pool walk sells the non-quote inventory and the quote inventory is then sold to SOL at 4 bps against a $10M reserve. On a SOL pair the swap matches the stress-test liquidation. The no-take-profit row uses that same all-non-SOL exit cost so the comparison is the exit, not a second cost model.");
+  lines.push("");
+  lines.push(`Walk-forward matches the stress test. Daily bars, lookback ${H12_LOOKBACK_DAYS} days, hold ${H12_HORIZON_DAYS} days, step ${H12_STEP_DAYS} days. ${input.entries.length} entries, ${new Set(input.entries.map((row) => row.key)).size} coins. Train is the first 70% of train-coin calendar days. Test is the rest of those coins. Holdout coins are the sorted 30% sample-key split. The quintile uses train coins only. Width uses the lookback only. Selected entries ${input.primaryIds.size}. Means are coin-equal. Trials overlap, so the bootstrap resamples coins. Versus cash is coin-equal net after costs. Versus hold is that equity minus buying the volatile token.`);
+  lines.push("");
+  lines.push("Promotion gates are unchanged: 8 train / 5 test / 4 holdout coins, beat cash and beat holding on the holdout, no coin above 50% of positive PnL, Bid-Ask excluded. Nothing here is promoted. Nothing is written to strategies/winners. The original H12 trial file and its hash are unchanged.");
+  lines.push("");
+  lines.push("## Results");
+  lines.push("");
+  lines.push("| Variant | Fees | OOS coins | OOS trials | Vs cash | Vs hold | Holdout vs cash | Holdout vs hold | TP hit | Stop | Timeout | Still open | Ex top coin | Ex top 3 |");
+  lines.push("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+  for (const row of input.books) {
+    const oos = row.book.filter(isOos).filter((item) => !item.withdrew);
+    const holdout = oos.filter((item) => item.entry.split === "holdout");
+    const summary = stats(oos);
+    const holdSummary = stats(holdout);
+    const ex1 = withoutTopCoins(oos.map((item) => ({ key: item.entry.key, net: item.net })), 1);
+    const ex3 = withoutTopCoins(oos.map((item) => ({ key: item.entry.key, net: item.net })), 3);
+    const name = row.level === null ? "H12, no TP" : `TP ${Math.round(row.level * 100)}%`;
+    lines.push(`| ${name} | ${row.feeModel} | ${summary.coins} | ${summary.trials} | ${usd(summary.coinNet)} | ${usd(summary.coinVsToken)} | ${usd(holdSummary.coinNet)} | ${usd(holdSummary.coinVsToken)} | ${rate(oos, "take-profit")} | ${rate(oos, "stop-loss")} | ${rate(oos, "out-of-range-timeout")} | ${rate(oos, null)} | ${usd(ex1.mean)} | ${usd(ex3.mean)} |`);
+  }
+  lines.push("");
+  const baseline = input.books.find((row) => row.level === null && row.feeModel === "crossed-bins");
+  const withdrawals = baseline ? baseline.book.filter(isOos).filter((row) => row.withdrew).length : 0;
+  lines.push(`Cartea withdrawals on the out-of-sample days, counted as cash in the inclusive figure below: ${withdrawals}. They do not depend on the take-profit. Inclusive crossed-bin, no take-profit, coin-equal net ${usd(baseline ? stats(baseline.book.filter(isOos), true).coinNet : null)}. Holding the token on the entered out-of-sample rows, coin-equal net ${usd(baseline ? coinEqualMean(holdRows(baseline.book)).mean : null)}.`);
+  lines.push("");
+  lines.push("## Concentration and the gates");
+  lines.push("");
+  for (const level of [null, ...H12_TP_LEVELS]) {
+    const crossed = input.books.find((row) => row.level === level && row.feeModel === "crossed-bins");
+    const active = input.books.find((row) => row.level === level && row.feeModel === "active-bin");
+    if (!crossed || !active) continue;
+    const name = level === null ? "H12, no TP" : `TP ${Math.round(level * 100)}%`;
+    const oos = crossed.book.filter(isOos).filter((row) => !row.withdrew);
+    const coinNets = perCoinNets(oos.map((row) => ({ key: row.entry.key, net: row.net }))).sort((a, b) => a - b);
+    const boot = clusterBootstrapCoinMean(groupsOf(oos), 1000, 12);
+    const activeOos = active.book.filter(isOos).filter((row) => !row.withdrew);
+    const id = level === null ? "h12-no-tp" : `h12-tp${Math.round(level * 100)}`;
+    const collapsed = collapseCoins(crossed.book).map((trial) => ({ ...trial, strategyId: id }));
+    const boards = scoreTrials(collapsed, []);
+    const notes = boards.map((board) => `${board.coinType}: ${board.promotionNote}`).join(" ");
+    const promoted = boards.filter((board) => board.winner).map((board) => board.coinType);
+    lines.push(`### ${name}`);
+    lines.push("");
+    lines.push(`Crossed-bin entered out-of-sample per-coin net: n=${coinNets.length}, median ${usd(median(coinNets))}, 10th ${usd(quantileOf(coinNets, 0.1))}, 90th ${usd(quantileOf(coinNets, 0.9))}, share positive ${pct(coinNets.length ? coinNets.filter((value) => value > 0).length / coinNets.length : null)}. Bootstrap 95% ${boot ? `${usd(boot.low)} to ${usd(boot.high)}` : "n/a"}. Active-bin coin-equal net ${usd(stats(activeOos).coinNet)}, versus hold ${usd(stats(activeOos).coinVsToken)}. Train crossed-bin coin-equal net ${usd(stats(crossed.book.filter((row) => row.entry.split === "train" && !row.withdrew)).coinNet)}. Mean bins ${binsOf(oos)}.`);
+    lines.push("");
+    lines.push(`Coin-collapsed gate check, crossed-bin, not a promotion: ${promoted.length ? promoted.join(", ") : "no bucket cleared"}. ${notes}`);
+    lines.push("");
+  }
+  lines.push("A bucket note that says a rule is promoted is the unchanged gate talking about this sample. It does not freeze a strategy and it does not change the H12 trial hash.");
+  lines.push("");
+  return lines.join("\n");
+}
+
+function rate(rows: Outcome[], reason: string | null): string {
+  if (rows.length === 0) return "n/a";
+  const hits = rows.filter((row) => (row.trial.closeReason ?? null) === reason).length;
+  return `${((100 * hits) / rows.length).toFixed(1)}%`;
+}
+
 function makePlayer(
   base: StrategyConfig,
   sol: number,
@@ -326,6 +465,10 @@ function makePlayer(
     costScale: number;
     label: string;
     features?: "pit" | "forward";
+    /** Null keeps the pre-registered exit. A number is an after-cost take-profit. */
+    takeProfitPct?: number | null;
+    /** all-non-sol sells every non-SOL balance. leg is the stress-test default. */
+    swap?: "leg" | "all-non-sol";
   }): Outcome[] {
     const selected = entries.filter((entry) => ids.has(entry.id));
     const out: Outcome[] = [];
@@ -340,12 +483,19 @@ function makePlayer(
         out.push(cashOutcome(entry, opts.size, opts.label));
         continue;
       }
-      const strategy = withBins(base, bins, opts.label);
-      const gross = cachedReplay(cache, entry, strategy, opts.size, opts.feeModel, opts.path);
+      const strategy = withBins(base, bins, opts.label, opts.takeProfitPct ?? null);
+      const gross = cachedReplay(cache, entry, strategy, opts.size, opts.feeModel, opts.path, sol);
       calls += 1;
       if (calls % 2000 === 0) log(`Replays ${calls}, cache ${cache.size}`);
       if (!gross) continue;
-      const net = withCosts({ ...gross, strategyId: opts.label, coinKey: entry.key }, entry.pool, sol, entry.liquidityBins, opts.costScale);
+      const net = withCosts(
+        { ...gross, strategyId: opts.label, coinKey: entry.key },
+        entry.pool,
+        sol,
+        entry.liquidityBins,
+        opts.costScale,
+        opts.swap ?? "leg",
+      );
       const hold = tokenHoldUsd(entry.pool, entry.forward, opts.size);
       net.vsTokenUsd = net.equityUsd - hold.usd;
       net.poolShare = entry.pool.tvlUsd > 0 ? opts.size / entry.pool.tvlUsd : 0;
@@ -371,8 +521,12 @@ function cachedReplay(
   size: number,
   feeModel: "crossed-bins" | "active-bin",
   path: "wick" | "close",
+  solPriceUsd: number,
 ): TrialResult | null {
-  const key = `${entry.id}|${strategy.binsBelow}|${size}|${feeModel}|${path}|${entry.candleHours}`;
+  const tp = strategy.exit.takeProfitAfterCosts && strategy.exit.takeProfitPct !== null
+    ? `|tp${strategy.exit.takeProfitPct}|sol${solPriceUsd}`
+    : "";
+  const key = `${entry.id}|${strategy.binsBelow}|${size}|${feeModel}|${path}|${entry.candleHours}${tp}`;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
   const gross = replayStrategy({
@@ -386,6 +540,7 @@ function cachedReplay(
     feeModel,
     liquidityBins: entry.liquidityBins,
     path,
+    solPriceUsd,
   });
   cache.set(key, gross);
   return gross;
@@ -1107,8 +1262,10 @@ function cashOutcome(entry: Prepared, size: number, id: string): Outcome {
   return { entry, net: 0, vsToken: size - hold.usd, bins: null, withdrew: true, trial };
 }
 
-function withBins(base: StrategyConfig, bins: number, id: string): StrategyConfig {
-  return { ...base, id, binsBelow: bins, binsAbove: bins };
+function withBins(base: StrategyConfig, bins: number, id: string, takeProfitPct: number | null = null): StrategyConfig {
+  const exit: StrategyConfig["exit"] = { ...base.exit, takeProfitPct };
+  if (takeProfitPct !== null) exit.takeProfitAfterCosts = true;
+  return { ...base, id, binsBelow: bins, binsAbove: bins, exit };
 }
 
 function mustStrategy(id: string): StrategyConfig {

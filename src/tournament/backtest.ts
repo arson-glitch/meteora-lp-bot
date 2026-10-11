@@ -92,6 +92,8 @@ export function replayStrategy(params: {
   recordCurve?: boolean;
   /** Wick walks high and low inside the bar. Close marks the bar at its close only. */
   path?: "wick" | "close";
+  /** Used when the strategy measures take-profit after exit costs. */
+  solPriceUsd?: number;
 }): TrialResult | null {
   const { candles } = params;
   if (candles.length < 2) return null;
@@ -132,6 +134,7 @@ export function replayStrategy(params: {
         elapsedHours: legHours,
         feeModel: params.feeModel,
         liquidityBins: params.liquidityBins,
+        solPriceUsd: params.solPriceUsd,
       });
       position = stepped.position;
       equity = equityUsd(position);
