@@ -15,6 +15,7 @@ import { runDaily } from "./tournament/daily.js";
 import { markForwardBook, summarizeForward } from "./tournament/forward.js";
 import { runBrief3 } from "./tournament/brief3.js";
 import { runH12Stress, runH12TakeProfit } from "./tournament/h12stress.js";
+import { runH30 } from "./tournament/h30.js";
 import { renderH12TpTrials, syncH12TpBooks } from "./tournament/h12trial.js";
 import { defaultDashboardPaths, writeDashboard } from "./tournament/dashboard.js";
 import { validateFeesFile } from "./tournament/validateFees.js";
@@ -201,6 +202,15 @@ async function main(): Promise<void> {
     console.log(trialPath);
     return;
   }
+  if (cli.command === "h30") {
+    const path = await runH30({
+      reportsDir: resolve(process.cwd(), "reports"),
+      cacheDir: resolve(process.cwd(), "data/h30"),
+      onProgress: (message) => console.log(message),
+    });
+    console.log(path);
+    return;
+  }
   if (cli.command === "brief3") {
     const path = await runBrief3({
       reportsDir: resolve(process.cwd(), "reports"),
@@ -301,6 +311,7 @@ function helpText(): string {
     "  daily            Mark forward positions, open new paper trials, rerun the tournament",
     "  h12-stress       Walk-forward stress test of the adaptive-width rule",
     "  h12-tp           H12 take-profit variants: backtest, then paper sub-books",
+    "  h30              Paper event study of the 5-minute pump-flip rule",
     "  validate-fees    Compare recorder swaps and bin snapshots with the fee models",
     "  dashboard        Write the offline paper dashboard",
     "  high-vol-edge    Reprice the frozen high-vol strategy with costs and active-bin fees",

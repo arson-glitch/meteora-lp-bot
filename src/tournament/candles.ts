@@ -28,18 +28,18 @@ export interface Candle {
   lpFeesUsd: number;
 }
 
-export type CandleTimeframe = "1h" | "4h" | "12h" | "24h";
+export type CandleTimeframe = "5m" | "1h" | "4h" | "12h" | "24h";
 
 export interface CandleSeries {
   poolAddress: string;
   timeframe: CandleTimeframe;
   candleHours: number;
-  source: "meteora" | "geckoterminal" | "recorder";
+  source: "meteora" | "geckoterminal" | "mixed" | "recorder";
   feeSource: "volume-history" | "fee-rate" | "mixed" | "swap-events";
   candles: Candle[];
 }
 
-const HOURS: Record<CandleTimeframe, number> = { "1h": 1, "4h": 4, "12h": 12, "24h": 24 };
+const HOURS: Record<CandleTimeframe, number> = { "5m": 5 / 60, "1h": 1, "4h": 4, "12h": 12, "24h": 24 };
 
 export function seriesSpanDays(series: CandleSeries): number {
   const first = series.candles[0];
@@ -159,6 +159,45 @@ async function fetchMeteora(
     candleHours,
     source: "meteora",
     feeSource,
+    candles: dedupe(candles),
+  };
+}
+
+/**
+ * GeckoTerminal 5-minute bars. The public route returns up to 1,000 bars
+ * (about 3.5 days). There is no LP-fee field, so the caller estimates fees.
+ * Newest bar first in the payload; this returns oldest first.
+ */
+export async function fetchGecko5m(pool: DiscoveredPool): Promise<CandleSeries> {
+  const url = `${GECKOTERMINAL_API_BASE}/networks/solana/pools/${pool.address}/ohlcv/minute?aggregate=5&limit=1000`;
+  let rows: number[][] = [];
+  try {
+    rows = geckoRows(await getJsonRetry<unknown>(url));
+  } catch {
+    rows = [];
+  }
+  const candles: Candle[] = [];
+  for (const row of rows) {
+    if (!Array.isArray(row) || row.length < 6) continue;
+    const [timestamp, open, high, low, close, volume] = row.map((value) => num(value));
+    if (!(close > 0) || !(open > 0)) continue;
+    candles.push({
+      timestamp: Math.floor(timestamp / 300) * 300,
+      open,
+      high: Math.max(high, open, close),
+      low: Math.min(low > 0 ? low : open, open, close),
+      close,
+      volumeUsd: volume,
+      lpFeesUsd: 0,
+    });
+  }
+  candles.sort((a, b) => a.timestamp - b.timestamp);
+  return {
+    poolAddress: pool.address,
+    timeframe: "5m",
+    candleHours: HOURS["5m"],
+    source: "geckoterminal",
+    feeSource: "fee-rate",
     candles: dedupe(candles),
   };
 }
