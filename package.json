@@ -24,6 +24,7 @@
     "h12-stress": "MODE=paper tsx src/index.ts h12-stress",
     "h12-tp": "MODE=paper tsx src/index.ts h12-tp",
     "h30": "MODE=paper tsx src/index.ts h30",
+    "h33": "MODE=paper tsx src/index.ts h33",
     "validate-fees": "MODE=paper tsx src/index.ts validate-fees",
     "dashboard": "MODE=paper tsx src/index.ts dashboard",
     "test": "vitest run",

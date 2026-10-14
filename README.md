@@ -123,6 +123,8 @@ npm run daily
 
 `strategies/frozen/h12-trial-2026-10-10.json` is a paper trial of that rule, labelled trial, not promoted. `npm run daily` marks `data/h12-trial-forward.json` and opens new pools that pass the pre-entry top 20% fee quintile. Each position logs crossed-bin fees, active-bin fees, exit costs, versus cash, and versus holding the token. The width is computed at entry. The file's hash covers the rule. The same run marks and opens `strategies/frozen/h12-trial-tp10-2026-10-11.json` and the 15%, 25%, and 40% files into their own books under `data/`. Those files do not change the original trial hash.
 
+`npm run h33` opens a separate fair take-profit test. `h12-matched-base` and `h12-matched-tp10`, `tp15`, `tp25`, and `tp40` open the same pool at the same mark after one shared rug check. The original H12 trial and the older take-profit books keep their own opens. The same command opens H33 paper books that skip pools younger than 12 hours (`h12-age12`, `h12-age12-soldump`, and grid copies under `data/age12/`). The SOL-dump books also skip a run when SOL's 24-hour change is under -5%. H33 does not replace the existing rules and is not part of promotion. The report is `reports/h33-and-matched-YYYY-MM-DD.md`. `npm run daily` marks and opens those books on later days without rerunning the H33 backtest.
+
 `npm run validate-fees -- --db /path/to/recorder.sqlite` compares the box recorder's swap fees and per-bin snapshots with the crossed-bin and active-bin models and writes which one is closer.
 
 `npm run dashboard` writes `reports/dashboard/index.html`, one offline file with the numbers embedded. It has no server and no network requests. `npm run daily` regenerates it. Pass `--db` to include recorder swaps, snapshots, drops, and credits.

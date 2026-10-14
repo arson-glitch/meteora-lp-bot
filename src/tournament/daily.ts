@@ -28,6 +28,8 @@ import {
 import { FROZEN_STRATEGY_FILE } from "./frozen.js";
 import { syncFrozenHighVolBook, type FrozenBookStatus } from "./frozenBook.js";
 import { defaultDashboardPaths, writeDashboard } from "./dashboard.js";
+import { renderH12Matched, syncH12MatchedBooks } from "./h12matched.js";
+import { renderH33Paper, syncH33Paper, type H33PaperSync } from "./h33.js";
 import { H12_TRIAL_BOOK, H12_TRIAL_FILE, renderH12TpTrials, renderH12Trial, syncH12TpBooks, syncH12TrialBook, type H12TrialStatus } from "./h12trial.js";
 import { gridStrategies } from "./grid.js";
 import { forwardStrategySnapshot, type ForwardStrategySnapshot, type LeaderStudy } from "./leaderStudy.js";
@@ -136,6 +138,22 @@ export async function runDaily(options: DailyOptions): Promise<string> {
     rug: options.rug,
     onProgress: log,
   });
+  const matched = await syncH12MatchedBooks({
+    cacheDir: h12CacheDir,
+    universe,
+    nowMs,
+    solPriceUsd: frozen.solPriceUsd,
+    rug: options.rug,
+    onProgress: log,
+  });
+  const h33 = await syncH33Paper({
+    cacheDir: h12CacheDir,
+    universe,
+    nowMs,
+    solPriceUsd: frozen.solPriceUsd,
+    rug: options.rug,
+    onProgress: log,
+  });
 
   const result = await runTournament({
     nowMs,
@@ -176,6 +194,8 @@ export async function runDaily(options: DailyOptions): Promise<string> {
       poolTypes: new Map(history.pools.map((pool) => [pool.address, pool.coinType])),
       h12,
       h12Tp,
+      matched,
+      h33,
     }),
   );
   const dash = await writeDashboard({
@@ -244,6 +264,8 @@ function renderDaily(params: {
   poolTypes: Map<string, string>;
   h12: H12TrialStatus;
   h12Tp: H12TrialStatus[];
+  matched: Awaited<ReturnType<typeof syncH12MatchedBooks>>;
+  h33: H33PaperSync;
 }): string {
   const lines: string[] = [];
   lines.push(`# Paper daily ${params.generatedAt.slice(0, 10)}`);
@@ -326,6 +348,10 @@ function renderDaily(params: {
   lines.push(renderH12TpTrials(params.h12Tp));
   const tpRugs = params.h12Tp[0]?.rugs ?? [];
   if (tpRugs.length > 0) lines.push(renderRugs("H12 take-profit opens", tpRugs));
+  lines.push(renderH12Matched(params.matched));
+  if (params.matched.rugs.length > 0) lines.push(renderRugs("H12 matched opens", params.matched.rugs));
+  lines.push(renderH33Paper(params.h33));
+  if (params.h33.rugs.length > 0) lines.push(renderRugs("H33 age-filter opens", params.h33.rugs));
   lines.push("");
   return lines.join("\n");
 }

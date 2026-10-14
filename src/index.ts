@@ -16,6 +16,7 @@ import { markForwardBook, summarizeForward } from "./tournament/forward.js";
 import { runBrief3 } from "./tournament/brief3.js";
 import { runH12Stress, runH12TakeProfit } from "./tournament/h12stress.js";
 import { runH30 } from "./tournament/h30.js";
+import { runH33Job } from "./tournament/h33.js";
 import { renderH12TpTrials, syncH12TpBooks } from "./tournament/h12trial.js";
 import { defaultDashboardPaths, writeDashboard } from "./tournament/dashboard.js";
 import { validateFeesFile } from "./tournament/validateFees.js";
@@ -202,6 +203,28 @@ async function main(): Promise<void> {
     console.log(trialPath);
     return;
   }
+  if (cli.command === "h33") {
+    const reportsDir = resolve(process.cwd(), "reports");
+    const db = cli.db ?? resolve(process.cwd(), "data/recorder/recorder-2026-10-11.sqlite");
+    const { path, universe } = await runH33Job({
+      reportsDir,
+      recorderDb: db,
+      rug: {
+        failScore: config.rugFailScore,
+        minHolders: config.rugMinHolders,
+        minTvlUsd: config.limits.minTvlUsd,
+        failClosed: config.rugFailClosed,
+      },
+      onProgress: (message) => console.log(message),
+    });
+    const dash = await writeDashboard({
+      ...defaultDashboardPaths(reportsDir, db),
+      pools: universe,
+    });
+    console.log(path);
+    console.log(dash);
+    return;
+  }
   if (cli.command === "h30") {
     const path = await runH30({
       reportsDir: resolve(process.cwd(), "reports"),
@@ -312,6 +335,7 @@ function helpText(): string {
     "  h12-stress       Walk-forward stress test of the adaptive-width rule",
     "  h12-tp           H12 take-profit variants: backtest, then paper sub-books",
     "  h30              Paper event study of the 5-minute pump-flip rule",
+    "  h33              Matched H12 books, 12-hour age filter, and the fresh-pool backtest",
     "  validate-fees    Compare recorder swaps and bin snapshots with the fee models",
     "  dashboard        Write the offline paper dashboard",
     "  high-vol-edge    Reprice the frozen high-vol strategy with costs and active-bin fees",

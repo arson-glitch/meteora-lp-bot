@@ -94,18 +94,29 @@ export function replayStrategy(params: {
   path?: "wick" | "close";
   /** Used when the strategy measures take-profit after exit costs. */
   solPriceUsd?: number;
+  /**
+   * Enter on this candle instead of the first. Earlier candles are pre-entry
+   * and are not traded. The default is the first candle.
+   */
+  entryIndex?: number;
+  /** Stop before this candle. The default is the end of the series. */
+  endIndex?: number;
 }): TrialResult | null {
   const { candles } = params;
+  const entryIndex = params.entryIndex ?? 0;
+  const endIndex = params.endIndex ?? candles.length;
   if (candles.length < 2) return null;
+  if (entryIndex < 0 || entryIndex >= endIndex || endIndex - entryIndex < 1) return null;
   if (params.pool.binStep === null || !(params.pool.tvlUsd > 0)) return null;
   const frozenY = params.pool.tokenY.priceUsd > 0 ? params.pool.tokenY.priceUsd : 1;
-  const openPrice = candles[0]?.open ?? 0;
-  if (!(openPrice > 0)) return null;
+  const entryCandle = candles[entryIndex];
+  const openPrice = entryCandle?.open ?? 0;
+  if (!entryCandle || !(openPrice > 0)) return null;
 
-  let clock = (candles[0]?.timestamp ?? 0) * 1000;
+  let clock = entryCandle.timestamp * 1000;
   const volumeHistory: number[] = [];
   let position = openPaperPosition({
-    pool: poolAt(params.pool, openPrice, frozenY, candles[0] as Candle, params.candleHours),
+    pool: poolAt(params.pool, openPrice, frozenY, entryCandle, params.candleHours),
     strategy: params.strategy,
     sizeUsd: params.sizeUsd,
     nowMs: clock,
@@ -115,12 +126,12 @@ export function replayStrategy(params: {
   let peak = equity;
   let maxDrawdown = 0;
   const curve: Array<{ t: number; equity: number }> = [];
-  const endPrice = candles[candles.length - 1]?.close ?? openPrice;
+  const endPrice = candles[endIndex - 1]?.close ?? openPrice;
 
-  for (let index = 0; index < candles.length; index += 1) {
+  for (let index = entryIndex; index < endIndex; index += 1) {
     const candle = candles[index] as Candle;
     const path = params.path === "close" ? [candle.open, candle.close] : ohlcPath(candle);
-    const points = index === 0 ? path.slice(1) : path[0] === position.lastPrice ? path.slice(1) : path;
+    const points = index === entryIndex ? path.slice(1) : path[0] === position.lastPrice ? path.slice(1) : path;
     if (points.length === 0) continue;
     const legHours = params.candleHours / points.length;
     for (const price of points) {

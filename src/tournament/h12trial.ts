@@ -96,7 +96,7 @@ export interface H12Slot {
 export interface H12TrialBook {
   version: 1;
   mode: "paper";
-  kind: "h12-trial";
+  kind: "h12-trial" | "h12-matched" | "h12-age12";
   status: typeof H12_TRIAL_STATUS;
   strategyId: string;
   strategyVersion: string;
@@ -388,7 +388,7 @@ export async function syncH12TrialBook(options: {
     await markH12Book(book, options.nowMs, fetchDlmmPool);
   }
   log("Scoring the H12 fee quintile on pre-entry daily bars");
-  const series = await loadDailySeries(options.universe, options.cacheDir, options.nowMs, log);
+  const series = await loadH12DailySeries(options.universe, options.cacheDir, options.nowMs, log);
   const ranked = rankH12Candidates(series, options.nowMs, trial.rule);
   const have = new Set(book.slots.map((slot) => slot.position.poolAddress));
   const fresh = ranked.passed
@@ -467,7 +467,7 @@ export function renderH12Trial(status: H12TrialStatus): string {
   return lines.join("\n");
 }
 
-async function loadDailySeries(
+export async function loadH12DailySeries(
   universe: DiscoveredPool[],
   cacheDir: string,
   nowMs: number,
@@ -533,6 +533,10 @@ function statusOf(
     rows,
     rugs,
   };
+}
+
+export function h12MarkRow(slot: H12Slot, pool: DiscoveredPool | null, solPriceUsd: number): H12TrialRow {
+  return rowFor(slot, pool, solPriceUsd);
 }
 
 function rowFor(slot: H12Slot, pool: DiscoveredPool | null, solPriceUsd: number): H12TrialRow {
@@ -613,7 +617,7 @@ export async function syncH12TpBooks(options: {
     }
   }
   log("Scoring the H12 fee quintile for the take-profit sub-books");
-  const series = await loadDailySeries(options.universe, options.cacheDir, options.nowMs, log);
+  const series = await loadH12DailySeries(options.universe, options.cacheDir, options.nowMs, log);
   const ranked = rankH12Candidates(series, options.nowMs, H12_TRIAL_RULE);
   const wanted = new Map<string, Candidate>();
   for (const row of loaded) {

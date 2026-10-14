@@ -10,6 +10,8 @@ import { fetchDlmmPool } from "../scanner/meteora.js";
 import type { CoinType, DiscoveredPool, PaperPosition } from "../types.js";
 import { emptyForwardBook, gridHistory } from "./forward.js";
 import { costOf } from "./frozenBook.js";
+import { H12_MATCHED_IDS, h12MatchedBookPath } from "./h12matched.js";
+import { age12GridPath, h12AgeBookPath, recorderDelayNote } from "./h33.js";
 import { H12_TP_LEVELS, H12_TRIAL_BOOK, h12TpBookPath, h12TpLabel } from "./h12trial.js";
 
 export const DASHBOARD_FILE = "reports/dashboard/index.html";
@@ -122,6 +124,10 @@ export interface DashboardModel {
   h12Rows: H12DashRow[];
   /** Take-profit sub-books. Absent on older snapshots. */
   tpBooks?: BookCard[];
+  /** Fair take-profit test. Not added into the original H12 trial. */
+  matchedBooks?: BookCard[];
+  /** 12-hour age filter and the SOL-dump sub-variant. */
+  ageBooks?: BookCard[];
   coins: CoinBreakdown[];
   leaderboardGeneratedAt: string | null;
   leaderboard: LeaderRow[];
@@ -288,11 +294,23 @@ export async function buildDashboard(paths: DashboardPaths): Promise<DashboardMo
   const frozen = loadFrozen(paths.frozenBookPath);
   const forward = loadForward(paths.forwardPath);
   const tpLoaded = H12_TP_LEVELS.map((level) => ({ level, loaded: loadH12(h12TpBookPath(level)) })).filter((row) => row.loaded.missing === null);
+  const matchedLoaded = H12_MATCHED_IDS.map((id) => ({ id, loaded: loadH12(h12MatchedBookPath(id)) })).filter((row) => row.loaded.missing === null);
+  const ageLoaded = [
+    { title: "H12 age 12h", loaded: loadH12(h12AgeBookPath("age12")) },
+    { title: "H12 age 12h, SOL dump", loaded: loadH12(h12AgeBookPath("soldump")) },
+  ].filter((row) => row.loaded.missing === null);
+  const ageGrids = [
+    { title: "Grid age 12h", loaded: loadForward(age12GridPath(false)) },
+    { title: "Grid age 12h, SOL dump", loaded: loadForward(age12GridPath(true)) },
+  ].filter((row) => row.loaded.missing === null);
   const solFallback = h12.sol ?? frozen.sol ?? solFromPositions([
     ...forward.positions,
     ...frozen.positions,
     ...h12.positions,
     ...tpLoaded.flatMap((row) => row.loaded.positions),
+    ...matchedLoaded.flatMap((row) => row.loaded.positions),
+    ...ageLoaded.flatMap((row) => row.loaded.positions),
+    ...ageGrids.flatMap((row) => row.loaded.positions),
   ]);
   const gridSol = solFallback;
   const addresses = [
@@ -300,12 +318,42 @@ export async function buildDashboard(paths: DashboardPaths): Promise<DashboardMo
     ...frozen.positions.map((position) => position.poolAddress),
     ...forward.positions.map((position) => position.poolAddress),
     ...tpLoaded.flatMap((row) => row.loaded.positions.map((position) => position.poolAddress)),
+    ...matchedLoaded.flatMap((row) => row.loaded.positions.map((position) => position.poolAddress)),
+    ...ageLoaded.flatMap((row) => row.loaded.positions.map((position) => position.poolAddress)),
+    ...ageGrids.flatMap((row) => row.loaded.positions.map((position) => position.poolAddress)),
   ];
   const quotes = await resolveQuotes(addresses, paths.pools, paths.offline === true, nowMs);
   const h12Measured = h12.slots.map((slot) => measure(slot.position, slot.coinType, h12.sol ?? solFallback, quotes.map.get(slot.position.poolAddress) ?? null, slot.entryTvlUsd ?? 0));
   const frozenMeasured = frozen.positions.map((position) => measure(position, "high-vol-trending", frozen.sol ?? solFallback, quotes.map.get(position.poolAddress) ?? null, 0));
   const poolTypes = forward.poolTypes;
   const forwardMeasured = forward.positions.map((position) => measure(position, poolTypes.get(position.poolAddress) ?? "unknown", gridSol, quotes.map.get(position.poolAddress) ?? null, 0));
+  const matchedBooks = matchedLoaded.map(({ id, loaded }) => {
+    const measured = loaded.slots.map((slot) => measure(
+      slot.position,
+      slot.coinType,
+      loaded.sol ?? solFallback,
+      quotes.map.get(slot.position.poolAddress) ?? null,
+      slot.entryTvlUsd ?? 0,
+    ));
+    const title = id === "base" ? "H12 matched base" : `H12 matched ${id.replace("tp", "")}% take-profit`;
+    return { card: card(`matched-${id}`, title, loaded.subtitle, loaded.updatedAt, loaded.missing, measured), measured, label: title };
+  });
+  const ageBooks = [
+    ...ageLoaded.map(({ title, loaded }) => {
+      const measured = loaded.slots.map((slot) => measure(
+        slot.position,
+        slot.coinType,
+        loaded.sol ?? solFallback,
+        quotes.map.get(slot.position.poolAddress) ?? null,
+        slot.entryTvlUsd ?? 0,
+      ));
+      return { card: card(title.toLowerCase().replaceAll(" ", "-"), title, loaded.subtitle, loaded.updatedAt, loaded.missing, measured), measured, label: title };
+    }),
+    ...ageGrids.map(({ title, loaded }) => {
+      const measured = loaded.positions.map((position) => measure(position, loaded.poolTypes.get(position.poolAddress) ?? "unknown", gridSol, quotes.map.get(position.poolAddress) ?? null, 0));
+      return { card: card(title.toLowerCase().replaceAll(" ", "-"), title, loaded.subtitle, loaded.updatedAt, loaded.missing, measured), measured, label: title };
+    }),
+  ];
   const tpBooks = tpLoaded.map(({ level, loaded }) => {
     const measured = loaded.slots.map((slot) => measure(
       slot.position,
@@ -329,9 +377,13 @@ export async function buildDashboard(paths: DashboardPaths): Promise<DashboardMo
     books: [h12Card, frozenCard, forwardCard],
     h12Rows: h12Rows(h12.slots, h12Measured),
     tpBooks: tpBooks.map((row) => row.card),
+    matchedBooks: matchedBooks.map((row) => row.card),
+    ageBooks: ageBooks.map((row) => row.card),
     coins: [
       ...coinsOf("H12 trial", h12Measured),
       ...tpBooks.flatMap((row) => coinsOf(row.label, row.measured)),
+      ...matchedBooks.flatMap((row) => coinsOf(row.label, row.measured)),
+      ...ageBooks.flatMap((row) => coinsOf(row.label, row.measured)),
       ...coinsOf("Frozen high-vol", frozenMeasured),
       ...coinsOf("108-cell grid", forwardMeasured),
     ],
@@ -457,6 +509,12 @@ export function renderDashboardHtml(model: DashboardModel): string {
   <h2>H12 take-profit sub-books</h2>
   <p class="note">Separate paper books. 10%, 15%, 25%, and 40% of the deposit, measured after exit costs. On a take-profit the non-SOL inventory and unclaimed fees are swapped to SOL. Not promoted. Not added into the original trial.</p>
   ${(model.tpBooks ?? []).length === 0 ? `<p class="empty">No take-profit sub-books on disk yet.</p>` : `<div class="cards">${(model.tpBooks ?? []).map(renderCard).join("\n")}</div>`}
+  <h2>H12 matched books</h2>
+  <p class="note">Fair take-profit test. The same pool is opened at the same mark in the base book and at 10%, 15%, 25%, and 40%. Separate from the original H12 trial and from the older take-profit books. Not added into those totals.</p>
+  ${(model.matchedBooks ?? []).length === 0 ? `<p class="empty">No matched books on disk yet.</p>` : `<div class="cards">${(model.matchedBooks ?? []).map(renderCard).join("\n")}</div>`}
+  <h2>H33 age filter</h2>
+  <p class="note">Pools younger than 12 hours are skipped. After that, a pool is opened only if it still passes the entry rule. These books do not replace the original rules. The SOL dump book also skips a run when SOL is down more than 5% over 24 hours.</p>
+  ${(model.ageBooks ?? []).length === 0 ? `<p class="empty">No age-filter books on disk yet.</p>` : `<div class="cards">${(model.ageBooks ?? []).map(renderCard).join("\n")}</div>`}
   <h2>Per coin type</h2>
   ${renderCoinChart(model.coins)}
   ${renderCoinTable(model.coins)}
@@ -467,6 +525,7 @@ export function renderDashboardHtml(model: DashboardModel): string {
   <p class="note">Taken from the written daily and H12 trial reports. Thin TVL is a gate, not by itself a confirmed rug.</p>
   ${renderRugs(model.rugs)}
   <h2>Recorder</h2>
+  <p class="note">${esc(recorderDelayNote())}</p>
   ${renderRecorder(model.recorder)}
 </main>
 <script>
