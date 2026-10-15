@@ -1,7 +1,36 @@
 node_modules/
 dist/
-.env
-data/
-logs/
 agent-tools/
+
+# Secrets. The example file stays tracked and must stay empty.
+.env
+.env.*
+!.env.example
+
+# Live paper positions. These are local simulation books, not source.
+data/
+data/*-forward.json
+data/**/*-forward.json
+data/h12-*
+data/age12/
+data/matched*
+data/archive/
+data/paper-book.json
+data/live-book.json
+data/dashboard-pools.json
+
+# Recorder sqlite and exports.
+data/recorder/
+*.sqlite
+*.sqlite3
+*.sqlite.gz
+*.sqlite-journal
+
+# Book and position JSON if a run writes them outside data/.
+**/*-forward.json
+**/paper-book.json
+**/live-book.json
+**/grid-closed-*.json
+
+logs/
 *.log
