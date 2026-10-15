@@ -29,7 +29,7 @@ import { FROZEN_STRATEGY_FILE } from "./frozen.js";
 import { syncFrozenHighVolBook, type FrozenBookStatus } from "./frozenBook.js";
 import { defaultDashboardPaths, writeDashboard } from "./dashboard.js";
 import { renderH12Matched, syncH12MatchedBooks } from "./h12matched.js";
-import { renderH33Paper, syncH33Paper, type H33PaperSync } from "./h33.js";
+import { passesAge12, renderH33Paper, syncH33Paper, type H33PaperSync } from "./h33.js";
 import { H12_TRIAL_BOOK, H12_TRIAL_FILE, renderH12TpTrials, renderH12Trial, syncH12TpBooks, syncH12TrialBook, type H12TrialStatus } from "./h12trial.js";
 import { gridStrategies } from "./grid.js";
 import { forwardStrategySnapshot, type ForwardStrategySnapshot, type LeaderStudy } from "./leaderStudy.js";
@@ -96,7 +96,11 @@ export async function runDaily(options: DailyOptions): Promise<string> {
   const book = loadForwardBookIfPresent(options.forwardPath, nowMs, sizeUsd);
   const rugHits: RugHit[] = [];
   const noFresh: CoinType[] = [];
-  const openBuckets = options.rug ? await gateNewBuckets(buckets, book, universe, options.rug, rugHits, noFresh, log) : buckets;
+  const tooYoung: string[] = [];
+  const openBuckets = options.rug ? await gateNewBuckets(buckets, book, universe, options.rug, rugHits, noFresh, tooYoung, nowMs, log) : buckets.map((bucket) => ({
+    type: bucket.type,
+    pools: bucket.pools.filter((pool) => passesAge12(pool.createdAtMs, nowMs)),
+  }));
   const appended = appendForwardPools({
     book,
     buckets: openBuckets,
@@ -191,6 +195,7 @@ export async function runDaily(options: DailyOptions): Promise<string> {
       openedAt: new Date(nowMs).toISOString(),
       rugs: rugHits,
       noFresh,
+      tooYoung,
       poolTypes: new Map(history.pools.map((pool) => [pool.address, pool.coinType])),
       h12,
       h12Tp,
@@ -216,6 +221,8 @@ async function gateNewBuckets(
   rug: RugCheckOptions,
   hits: RugHit[],
   noFresh: CoinType[],
+  tooYoung: string[],
+  nowMs: number,
   log: (message: string) => void,
 ): Promise<ReturnType<typeof selectTournamentBuckets>> {
   const addresses = new Set(book.pools.map((pool) => pool.address));
@@ -229,7 +236,10 @@ async function gateNewBuckets(
   }
   const gated = [];
   for (const bucket of buckets) {
-    const candidates = bucket.pools.filter((pool) => !addresses.has(pool.address) && !keys.has(sampleKey(pool)));
+    const unseen = bucket.pools.filter((pool) => !addresses.has(pool.address) && !keys.has(sampleKey(pool)));
+    const young = unseen.filter((pool) => !passesAge12(pool.createdAtMs, nowMs));
+    if (young.length > 0) tooYoung.push(`${bucket.type}: ${young.map((pool) => pool.name).join(", ")}`);
+    const candidates = unseen.filter((pool) => passesAge12(pool.createdAtMs, nowMs));
     if (candidates.length === 0) {
       noFresh.push(bucket.type);
       gated.push({ type: bucket.type, pools: [] });
@@ -261,6 +271,7 @@ function renderDaily(params: {
   openedAt: string;
   rugs: RugHit[];
   noFresh: CoinType[];
+  tooYoung: string[];
   poolTypes: Map<string, string>;
   h12: H12TrialStatus;
   h12Tp: H12TrialStatus[];
@@ -291,6 +302,12 @@ function renderDaily(params: {
   }
   lines.push("");
   lines.push(`New forward trials: ${params.added.length ? params.added.join("; ") : "none"}. Active book: ${params.activeOpen} open positions. The ${FORWARD_POSITION_CAP.toLocaleString("en-US")} cap counts open positions. Combined with archived closes: ${params.forwardPositions} positions.`);
+  lines.push("");
+  lines.push("New opens skip a pool younger than 12 hours, or a pool whose creation time is missing. After 12 hours a pool is opened only if it is still in that coin type and passes the rug check. Existing positions are left as they are. The H12 books already require 14 daily bars, so this gate does not change their entry list.");
+  if (params.tooYoung.length > 0) {
+    lines.push("");
+    lines.push(`Left closed because the pool was under 12 hours: ${params.tooYoung.join("; ")}.`);
+  }
   if (params.noFresh.length > 0) {
     lines.push("");
     lines.push(`No unseen pool remained in the scan for: ${params.noFresh.join(", ")}.`);
